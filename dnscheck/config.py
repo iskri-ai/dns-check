@@ -134,9 +134,15 @@ def _value(rtype: str, text: str, where: str) -> RecordValue:
     if rtype == "TXT":
         return text.encode("utf-8")
     try:
-        # Origin root: names inside values are always absolute.
+        # Names inside values are always absolute. from_text relativizes
+        # them by default, and a relative name never equals the absolute
+        # name in a DNS answer.
         return dns.rdata.from_text(
-            dns.rdataclass.IN, dns.rdatatype.from_text(rtype), text, origin=dns.name.root
+            dns.rdataclass.IN,
+            dns.rdatatype.from_text(rtype),
+            text,
+            origin=dns.name.root,
+            relativize=False,
         )
     except (dns.exception.DNSException, ValueError) as exc:
         raise ConfigError(f"{where}: cannot parse {text!r} as {rtype}") from exc

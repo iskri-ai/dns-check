@@ -1,9 +1,9 @@
 from pathlib import Path
 
+import dns.message
 import dns.name
 import dns.rdata
-import dns.rdataclass
-import dns.rdatatype
+import dns.rrset
 import pytest
 
 from dnscheck.config import ConfigError, load, load_file, record_value
@@ -35,9 +35,11 @@ records:
 
 
 def rdata(rtype: str, text: str) -> dns.rdata.Rdata:
-    return dns.rdata.from_text(
-        dns.rdataclass.IN, dns.rdatatype.from_text(rtype), text, origin=dns.name.root
-    )
+    """A record as a real answer delivers it: encoded to wire format and decoded."""
+    query = dns.message.make_query("iskri.io.", rtype)
+    response = dns.message.make_response(query)
+    response.answer.append(dns.rrset.from_text("iskri.io.", 300, "IN", rtype, text))
+    return dns.message.from_wire(response.to_wire()).answer[0][0]
 
 
 def test_loads_a_valid_config() -> None:
@@ -59,6 +61,9 @@ def test_loads_a_valid_config() -> None:
     assert by_key["records @ MX"].expected == {
         rdata("MX", "10 mx.example.com."), rdata("MX", "20 backup.example.com."),
     }
+    assert by_key["records www CNAME"].expected == {rdata("CNAME", "target.example.net.")}
+    assert by_key["records @ CAA"].expected == {rdata("CAA", '0 issue "letsencrypt.org"')}
+    assert by_key["records @ A"].expected == {rdata("A", "203.0.113.10")}
 
 
 def test_the_real_expected_yaml_loads() -> None:
@@ -72,9 +77,15 @@ def test_txt_compares_as_joined_bytes_and_is_case_sensitive() -> None:
     assert record_value(rdata("TXT", '"v=DMARC1"')) != record_value(rdata("TXT", '"v=dmarc1"'))
 
 
-def test_other_types_compare_as_parsed_records() -> None:
-    assert record_value(rdata("AAAA", "2001:DB8:0::1")) == record_value(rdata("AAAA", "2001:db8::1"))
-    assert record_value(rdata("CNAME", "Foo.Example.com")) == record_value(rdata("CNAME", "foo.example.com."))
+def test_loaded_values_match_answer_records_regardless_of_spelling() -> None:
+    config = load(records(
+        '  "@": {AAAA: "2001:DB8:0::1", MX: "010 Mail.Example.com"}\n'
+        "  www: {CNAME: Target.Example.NET}\n"
+    ))
+    by_key = {r.key: r.expected for r in config.records}
+    assert by_key["records @ AAAA"] == {record_value(rdata("AAAA", "2001:db8::1"))}
+    assert by_key["records @ MX"] == {record_value(rdata("MX", "10 mail.example.com."))}
+    assert by_key["records www CNAME"] == {record_value(rdata("CNAME", "target.example.net."))}
 
 
 def records(body: str) -> str:
