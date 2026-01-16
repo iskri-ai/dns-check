@@ -184,7 +184,8 @@ class Querier:
                 return response
             except dns.exception.Timeout:
                 timeouts += 1
-            except (dns.exception.DNSException, OSError) as exc:
+            # dnspython raises a plain EOFError when a server closes TCP mid-answer
+            except (dns.exception.DNSException, OSError, EOFError) as exc:
                 reason = f"transport error: {type(exc).__name__}"
             finally:
                 self._sleep(PAUSE)

@@ -175,6 +175,7 @@ def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
     no_response: list[list[Outcome]] = [
         timeouts,
         [OSError] * 3,
+        [EOFError] * 3,
         [dns.exception.Timeout, OSError, dns.exception.Timeout],
     ]
     for outcomes in no_response:
@@ -195,6 +196,13 @@ def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
     for outcome in answered:
         result = querier(outcome)[0].authoritative("192.0.2.1", WWW, "A")
         assert isinstance(result, Unusable) and not result.no_response, result
+
+
+def test_a_tcp_answer_cut_off_mid_read_counts_as_no_response() -> None:
+    q, transport, _ = querier(EOFError, EOFError, EOFError, respond())
+    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("transport error: EOFError", no_response=True)
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans-prod-spb")
+    assert len(transport.calls) == 4
 
 
 def test_a_referral_gives_the_delegated_names() -> None:
