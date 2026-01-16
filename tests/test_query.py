@@ -31,6 +31,7 @@ def respond(
     *,
     rcode: int = dns.rcode.NOERROR,
     aa: bool = True,
+    tc: bool = False,
     answer: tuple[tuple[str, str, str], ...] = (),
     authority: tuple[tuple[str, str, str], ...] = (),
     nsid: bytes = b"5-ans-prod-spb",
@@ -42,6 +43,8 @@ def respond(
         response.set_rcode(rcode)
         if aa:
             response.flags |= dns.flags.AA
+        if tc:
+            response.flags |= dns.flags.TC
         for owner, rtype, data in answer:
             response.answer.append(dns.rrset.from_text(owner, 300, "IN", rtype, *data.split("|")))
         for owner, rtype, data in authority:
@@ -125,6 +128,12 @@ def test_unusable_responses() -> None:
         result = q.authoritative("192.0.2.1", qname, rtype)
         assert isinstance(result, Unusable), (reason, result)
         assert result.reason.startswith(reason), (reason, result)
+
+
+def test_a_final_response_that_is_still_truncated_is_unusable() -> None:
+    q, _, _ = querier(respond(tc=True), respond(aa=False, tc=True))
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Unusable("truncated response", "5-ans-prod-spb")
+    assert q.referral("192.0.2.1", QNAME) == Unusable("truncated response", "5-ans-prod-spb")
 
 
 def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:

@@ -175,7 +175,12 @@ class Querier:
         reason = UNREACHABLE
         for _ in range(TRIES):
             try:
-                return self._transport(query, address, TIMEOUT)
+                response = self._transport(query, address, TIMEOUT)
+                # The transport already retried a truncated UDP answer over
+                # TCP. A final answer that is still truncated may omit records.
+                if response.flags & dns.flags.TC:
+                    return Unusable("truncated response", _nsid(response))
+                return response
             except dns.exception.Timeout:
                 timeouts += 1
             except (dns.exception.DNSException, OSError) as exc:
