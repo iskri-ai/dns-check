@@ -135,7 +135,7 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
         return Result(key, Status.UNKNOWN, "RDAP: the response is not a JSON object")
 
     ldh_name = data.get("ldhName")
-    if not isinstance(ldh_name, str) or ldh_name.lower().rstrip(".") != config.domain:
+    if not isinstance(ldh_name, str) or ldh_name.lower() != config.domain:
         return Result(key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}")
     events = data.get("events")
     dates = [

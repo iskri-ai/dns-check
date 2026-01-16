@@ -186,7 +186,7 @@ def test_expiry_fails_after_expiration() -> None:
 
 def test_expiry_accepts_an_uppercase_ldh_name_and_a_trailing_slashless_base() -> None:
     config = Config(CONFIG.domain, CONFIG.nameservers, "https://rdap.example/rdap", 30, ())
-    assert checks.expiry(config, NOW, rdap(expiration("2027-11-10T09:43:44Z"), "ISKRI.IO.")).status is Status.OK
+    assert checks.expiry(config, NOW, rdap(expiration("2027-11-10T09:43:44Z"), "ISKRI.IO")).status is Status.OK
 
 
 @pytest.mark.parametrize(
@@ -196,6 +196,8 @@ def test_expiry_accepts_an_uppercase_ldh_name_and_a_trailing_slashless_base() ->
         (lambda url: b"<html>", "RDAP: the response is not valid JSON"),
         (lambda url: b"[]", "RDAP: the response is not a JSON object"),
         (rdap(expiration("2027-11-10T09:43:44Z"), "other.io"), "RDAP: the response is for 'other.io', not iskri.io"),
+        (rdap(expiration("2027-11-10T09:43:44Z"), "iskri.io."), "RDAP: the response is for 'iskri.io.', not iskri.io"),
+        (rdap(expiration("2027-11-10T09:43:44Z"), "iskri.io..."), "RDAP: the response is for 'iskri.io...'"),
         (rdap([]), "RDAP: expected one expiration event, found 0"),
         (rdap(expiration("2027-11-10T00:00:00Z") + expiration("2028-11-10T00:00:00Z")[1:]), "found 2"),
         (rdap(expiration("next year")), "RDAP: cannot parse the expiration date 'next year'"),
