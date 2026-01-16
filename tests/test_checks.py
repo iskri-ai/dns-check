@@ -1,0 +1,289 @@
+import datetime
+import email.message
+import io
+import json
+import urllib.error
+import urllib.request
+from collections.abc import Callable
+from typing import Any
+
+import dns.name
+import dns.rdata
+import dns.rdataclass
+import dns.rdatatype
+import pytest
+
+from dnscheck import checks
+from dnscheck.checks import RdapError, Result, Status
+from dnscheck.config import Config, load
+from dnscheck.query import NotDelegated, Records, Referral, Unusable
+
+CONFIG = load("""\
+domain: iskri.io
+nameservers: [a.ns.selectel.ru, b.ns.selectel.ru, c.ns.selectel.ru, d.ns.selectel.ru]
+expiry:
+  rdap_base_url: https://rdap.example/rdap/
+  min_days_left: 30
+records:
+  "@":
+    A: 203.0.113.10
+    AAAA: []
+    TXT: "v=spf1 -all"
+""")
+EXPECTED_NS = frozenset(CONFIG.nameservers)
+SELECTEL = {"a.ns.selectel.ru": "188.68.203.1", "b.ns.selectel.ru": "77.223.114.2",
+            "c.ns.selectel.ru": "188.68.203.3", "d.ns.selectel.ru": "77.223.114.4"}
+IO = {"a0.nic.io": "65.22.160.17", "a2.nic.io": "65.22.163.17",
+      "b0.nic.io": "65.22.161.17", "c0.nic.io": "65.22.162.17"}
+
+
+def lookups() -> dict[tuple[str, str], list[str] | None]:
+    table: dict[tuple[str, str], list[str] | None] = {("io.", "NS"): sorted(IO)}
+    table.update({(name, "A"): [address] for name, address in {**SELECTEL, **IO}.items()})
+    return table
+
+
+def rdata(rtype: str, text: str) -> dns.rdata.Rdata:
+    return dns.rdata.from_text(
+        dns.rdataclass.IN, dns.rdatatype.from_text(rtype), text, origin=dns.name.root, relativize=False
+    )
+
+
+def soa_record(serial: int) -> Records:
+    return Records(frozenset({rdata("SOA", f"a.ns.selectel.ru. support.selectel.ru. {serial} 10800 3600 604800 60")}), "5-ans-prod-spb")
+
+
+type Answer = Callable[[str, dns.name.Name, str], Any]
+
+
+class FakeQuerier:
+    def __init__(self, answers: Answer | None = None, referrals: dict[str, Any] | None = None) -> None:
+        self.lookups = lookups()
+        self.answers = answers or (lambda address, qname, rdtype: Unusable("not scripted"))
+        self.referrals = referrals or {}
+        self.calls: list[tuple[str, str]] = []
+
+    def lookup(self, name: str, rdtype: str) -> list[str] | None:
+        return self.lookups.get((name, rdtype))
+
+    def referral(self, address: str, qname: dns.name.Name) -> Any:
+        return self.referrals[address]
+
+    def authoritative(self, address: str, qname: dns.name.Name, rdtype: str) -> Any:
+        self.calls.append((address, rdtype))
+        return self.answers(address, qname, rdtype)
+
+
+def good_referrals() -> dict[str, Any]:
+    return {address: Referral(EXPECTED_NS, "LHR7") for address in IO.values()}
+
+
+# delegation
+
+
+def test_delegation_ok_when_every_answer_is_correct() -> None:
+    result = checks.delegation(FakeQuerier(referrals=good_referrals()), CONFIG)  # type: ignore[arg-type]
+    assert result == Result("delegation", Status.OK, "a.ns.selectel.ru, b.ns.selectel.ru, c.ns.selectel.ru, d.ns.selectel.ru (4/4 .io servers answered)")
+
+
+def test_delegation_fails_on_one_wrong_set_or_nxdomain() -> None:
+    referrals = good_referrals()
+    referrals[IO["b0.nic.io"]] = Referral(frozenset({"ns1.evil.example"}), "SCL1")
+    referrals[IO["c0.nic.io"]] = NotDelegated("DXB1")
+    result = checks.delegation(FakeQuerier(referrals=referrals), CONFIG)  # type: ignore[arg-type]
+    assert result.status is Status.FAIL
+    assert "b0.nic.io (65.22.161.17) [SCL1]: delegates to ns1.evil.example" in result.detail
+    assert "c0.nic.io (65.22.162.17) [DXB1]: the domain does not exist (NXDOMAIN)" in result.detail
+
+
+def test_delegation_ok_with_unreachable_servers_and_shows_the_count() -> None:
+    querier = FakeQuerier(referrals=good_referrals())
+    querier.referrals[IO["a0.nic.io"]] = Unusable("unreachable")
+    querier.lookups[("a2.nic.io", "A")] = None
+    result = checks.delegation(querier, CONFIG)  # type: ignore[arg-type]
+    assert result.status is Status.OK
+    assert result.detail.endswith("(2/4 .io servers answered)")
+
+
+def test_delegation_unknown_when_no_server_answers_or_the_lookup_fails() -> None:
+    silent = {address: Unusable("REFUSED") for address in IO.values()}
+    result = checks.delegation(FakeQuerier(referrals=silent), CONFIG)  # type: ignore[arg-type]
+    assert result.status is Status.UNKNOWN
+    assert result.detail.startswith("no server answered: a0.nic.io (65.22.160.17): REFUSED")
+
+    querier = FakeQuerier()
+    querier.lookups[("io.", "NS")] = None
+    assert checks.delegation(querier, CONFIG) == Result("delegation", Status.UNKNOWN, "could not look up the io. servers")  # type: ignore[arg-type]
+
+
+# soa
+
+
+def test_soa_ok_with_equal_serials_and_32_samples() -> None:
+    querier = FakeQuerier(lambda address, qname, rdtype: soa_record(2026111002))
+    assert checks.soa(querier, CONFIG) == Result("soa", Status.OK, "serial 2026111002 on 4 addresses")  # type: ignore[arg-type]
+    assert len(querier.calls) == 32
+
+
+def test_soa_fails_when_one_sample_lags_and_names_the_instance() -> None:
+    samples = iter([Records(soa_record(2026111001).values, "2-ans-prod-spb")] + [soa_record(2026111002)] * 31)
+    result = checks.soa(FakeQuerier(lambda *args: next(samples)), CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.FAIL, "serials differ: 188.68.203.1 [2-ans-prod-spb] 2026111001, all others 2026111002")
+
+
+def test_soa_fails_on_unreachable_addresses_failed_lookups_and_missing_records() -> None:
+    def answers(address: str, qname: dns.name.Name, rdtype: str) -> Any:
+        if address == SELECTEL["b.ns.selectel.ru"]:
+            return Unusable("unreachable")
+        if address == SELECTEL["c.ns.selectel.ru"]:
+            return Records(frozenset(), "7-ans-prod-spb")
+        return soa_record(2026111002)
+
+    querier = FakeQuerier(answers)
+    querier.lookups[("d.ns.selectel.ru", "A")] = None
+    result = checks.soa(querier, CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.FAIL, "; ".join([
+        "d.ns.selectel.ru: address lookup failed",
+        "b.ns.selectel.ru (77.223.114.2): unreachable",
+        "c.ns.selectel.ru (188.68.203.3) [7-ans-prod-spb]: 0 SOA records",
+    ]))
+
+
+# expiry
+
+NOW = datetime.datetime(2026, 11, 11, 12, 0, tzinfo=datetime.UTC)
+
+
+def rdap(events: list[dict[str, str]], ldh_name: str = "iskri.io") -> Callable[[str], bytes]:
+    def fetch(url: str) -> bytes:
+        assert url == "https://rdap.example/rdap/domain/iskri.io"
+        return json.dumps({"ldhName": ldh_name, "events": events}).encode()
+    return fetch
+
+
+def expiration(date: str) -> list[dict[str, str]]:
+    return [{"eventAction": "registration", "eventDate": "2026-11-10T09:43:44.556Z"},
+            {"eventAction": "expiration", "eventDate": date}]
+
+
+def test_expiry_ok_shows_date_and_days_left() -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2027-11-10T09:43:44.556Z")))
+    assert result == Result("expiry", Status.OK, "expires 2027-11-10, 363 days left")
+
+
+def test_expiry_boundary_is_exact() -> None:
+    exactly = (NOW + datetime.timedelta(days=30)).isoformat()
+    just_under = (NOW + datetime.timedelta(days=30) - datetime.timedelta(seconds=1)).isoformat()
+    assert checks.expiry(CONFIG, NOW, rdap(expiration(exactly))).status is Status.OK
+    assert checks.expiry(CONFIG, NOW, rdap(expiration(just_under))) == Result(
+        "expiry", Status.FAIL, "expires 2026-12-11, 29 days left, minimum 30")
+
+
+def test_expiry_fails_after_expiration() -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2026-11-01T00:00:00Z")))
+    assert result == Result("expiry", Status.FAIL, "expired on 2026-11-01")
+
+
+def test_expiry_accepts_an_uppercase_ldh_name_and_a_trailing_slashless_base() -> None:
+    config = Config(CONFIG.domain, CONFIG.nameservers, "https://rdap.example/rdap", 30, ())
+    assert checks.expiry(config, NOW, rdap(expiration("2027-11-10T09:43:44Z"), "ISKRI.IO.")).status is Status.OK
+
+
+@pytest.mark.parametrize(
+    ("fetch", "detail"),
+    [
+        (lambda url: (_ for _ in ()).throw(RdapError("HTTP 503")), "RDAP: HTTP 503"),
+        (lambda url: b"<html>", "RDAP: the response is not valid JSON"),
+        (lambda url: b"[]", "RDAP: the response is not a JSON object"),
+        (rdap(expiration("2027-11-10T09:43:44Z"), "other.io"), "RDAP: the response is for 'other.io', not iskri.io"),
+        (rdap([]), "RDAP: expected one expiration event, found 0"),
+        (rdap(expiration("2027-11-10T00:00:00Z") + expiration("2028-11-10T00:00:00Z")[1:]), "found 2"),
+        (rdap(expiration("next year")), "RDAP: cannot parse the expiration date 'next year'"),
+        (rdap(expiration("2027-11-10T09:43:44")), "has no time zone"),
+    ],
+)
+def test_expiry_unknown_cases(fetch: Callable[[str], bytes], detail: str) -> None:
+    result = checks.expiry(CONFIG, NOW, fetch)
+    assert result.status is Status.UNKNOWN
+    assert detail in result.detail
+
+
+class FakeResponse(io.BytesIO):
+    status = 200
+
+
+def test_fetch_rdap_sends_its_own_user_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[urllib.request.Request] = []
+
+    def urlopen(request: urllib.request.Request, timeout: float) -> FakeResponse:
+        seen.append(request)
+        return FakeResponse(b"{}")
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    assert checks.fetch_rdap("https://rdap.example/rdap/domain/iskri.io") == b"{}"
+    assert seen[0].get_header("User-agent") == "rdap-client/1.0"
+    assert seen[0].get_header("Accept") == "application/rdap+json"
+
+
+def test_fetch_rdap_errors_never_carry_exception_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    errors: list[Exception] = [
+        urllib.error.URLError("secret-token-in-reason"),
+        TimeoutError("secret-token"),
+        urllib.error.HTTPError("https://x/secret-token", 503, "secret-token", email.message.Message(), None),
+    ]
+
+    def urlopen(request: urllib.request.Request, timeout: float) -> FakeResponse:
+        raise errors.pop(0)
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    sleeps: list[float] = []
+    with pytest.raises(RdapError) as excinfo:
+        checks.fetch_rdap("https://rdap.example/rdap/domain/iskri.io", sleep=sleeps.append)
+    assert str(excinfo.value) == "HTTP 503"
+    assert sleeps == [1.0, 1.0]
+
+
+# records
+
+
+def by_type(table: dict[str, Any]) -> Answer:
+    return lambda address, qname, rdtype: table[rdtype](address) if callable(table[rdtype]) else table[rdtype]
+
+
+def test_records_ok_when_every_address_matches() -> None:
+    answers = by_type({
+        "A": Records(frozenset({rdata("A", "203.0.113.10")}), "6-ans-prod-spb"),
+        "AAAA": Records(frozenset(), "6-ans-prod-spb"),
+        "TXT": Records(frozenset({b"v=spf1 -all"}), "6-ans-prod-spb"),
+    })
+    results = checks.records(FakeQuerier(answers), CONFIG, CONFIG.records)  # type: ignore[arg-type]
+    assert [(r.key, r.status) for r in results] == [
+        ("records @ A", Status.OK), ("records @ AAAA", Status.OK), ("records @ TXT", Status.OK)]
+
+
+def test_records_merge_identical_differences_into_one_line() -> None:
+    answers = by_type({"TXT": Records(frozenset({b"v=spf1 +all"}), "6-ans-prod-spb")})
+    sets = [r for r in CONFIG.records if r.rtype == "TXT"]
+    assert checks.records(FakeQuerier(answers), CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ TXT", Status.FAIL, 'all addresses: missing "v=spf1 -all", unexpected "v=spf1 +all"')]
+
+
+def test_records_report_each_address_when_they_differ() -> None:
+    def aaaa(address: str) -> Any:
+        if address == SELECTEL["a.ns.selectel.ru"]:
+            return Records(frozenset({rdata("AAAA", "2001:db8::1")}), "8-ans-prod-spb")
+        if address == SELECTEL["b.ns.selectel.ru"]:
+            return Unusable("REFUSED", "5-ans-prod-spb")
+        return Records(frozenset(), "6-ans-prod-spb")
+
+    sets = [r for r in CONFIG.records if r.rtype == "AAAA"]
+    assert checks.records(FakeQuerier(by_type({"AAAA": aaaa})), CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ AAAA", Status.FAIL, "77.223.114.2: REFUSED; 188.68.203.1 [8-ans-prod-spb]: unexpected 2001:db8::1")]
+
+
+def test_records_fail_when_an_address_lookup_fails() -> None:
+    querier = FakeQuerier(by_type({"A": Records(frozenset({rdata("A", "203.0.113.10")}), "6-ans-prod-spb")}))
+    querier.lookups[("c.ns.selectel.ru", "A")] = None
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.records(querier, CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ A", Status.FAIL, "c.ns.selectel.ru: address lookup failed")]
