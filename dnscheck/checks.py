@@ -93,31 +93,33 @@ def delegation(querier: Querier, config: Config) -> Result:
 def soa(querier: Querier, config: Config) -> Result:
     key = "soa"
     qname = dns.name.from_text(config.domain)
-    targets, problems = _targets(querier, config.nameservers)
+    targets, silent = _targets(querier, config.nameservers)
+    wrong: list[str] = []
     serials: list[tuple[str, str, int]] = []
     for name, address in targets:
         for _ in range(SOA_SAMPLES):
             result = querier.authoritative(address, qname, "SOA")
             if isinstance(result, Unusable):
-                problems.append(f"{name} ({address}): {result.reason}")
+                (silent if result.no_response else wrong).append(f"{name} ({address}): {result.reason}")
                 continue
             records = [value for value in result.values if isinstance(value, SOA)]
             if len(records) != 1 or len(result.values) != 1:
-                problems.append(f"{name} ({address}) [{result.nsid}]: {len(result.values)} SOA records")
+                wrong.append(f"{name} ({address}) [{result.nsid}]: {len(result.values)} SOA records")
                 continue
             serials.append((address, result.nsid, records[0].serial))
 
     distinct = collections.Counter(serial for _, _, serial in serials)
-    if not problems and len(distinct) == 1:
-        serial = next(iter(distinct))
-        return Result(key, Status.OK, f"serial {serial} on {len(targets)} addresses")
-
-    lines = _unique(problems)
     if len(distinct) > 1:
         majority = distinct.most_common(1)[0][0]
         others = _unique(f"{address} [{nsid}] {serial}" for address, nsid, serial in serials if serial != majority)
-        lines.append("serials differ: " + ", ".join(others) + f", all others {majority}")
-    return Result(key, Status.FAIL, "; ".join(lines))
+        wrong.append("serials differ: " + ", ".join(others) + f", all others {majority}")
+    if wrong:
+        return Result(key, Status.FAIL, "; ".join(_unique(wrong + silent)))
+    if silent:
+        return Result(key, Status.UNKNOWN, "; ".join(_unique(silent)))
+    if len(distinct) == 1:
+        return Result(key, Status.OK, f"serial {next(iter(distinct))} on {len(targets)} addresses")
+    return Result(key, Status.FAIL, "no SOA answers")
 
 
 def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -> Result:
@@ -163,26 +165,33 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
 
 
 def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list[Result]:
-    targets, lookup_problems = _targets(querier, config.nameservers)
+    targets, lookup_silent = _targets(querier, config.nameservers)
     results: list[Result] = []
     for record_set in sets:
-        problems = list(lookup_problems)
-        per_address: list[tuple[str, str]] = []
+        wrong: list[str] = []
+        diffs: list[tuple[str, str]] = []
+        silent = list(lookup_silent)
+        matched = 0
         for _name, address in targets:
             result = querier.authoritative(address, record_set.qname, record_set.rtype)
             if isinstance(result, Unusable):
-                problems.append(f"{address}: {result.reason}")
-            elif isinstance(result, Records) and result.values != record_set.expected:
-                per_address.append((f"{address} [{result.nsid}]", _diff(record_set.expected, result.values)))
-        if not problems and not per_address:
+                (silent if result.no_response else wrong).append(f"{address}: {result.reason}")
+            elif result.values == record_set.expected:
+                matched += 1
+            else:
+                diffs.append((f"{address} [{result.nsid}]", _diff(record_set.expected, result.values)))
+        if wrong or diffs:
+            if not wrong and not silent and len(diffs) == len(targets) and len({d for _, d in diffs}) == 1:
+                lines = [f"all addresses: {diffs[0][1]}"]
+            else:
+                lines = wrong + [f"{where}: {diff}" for where, diff in diffs] + silent
+            results.append(Result(record_set.key, Status.FAIL, "; ".join(lines)))
+        elif silent:
+            results.append(Result(record_set.key, Status.UNKNOWN, "; ".join(silent)))
+        elif targets and matched == len(targets):
             results.append(Result(record_set.key, Status.OK, ""))
-            continue
-        diffs = {diff for _, diff in per_address}
-        if len(diffs) == 1 and len(per_address) == len(targets) and not problems:
-            lines = [f"all addresses: {diffs.pop()}"]
         else:
-            lines = problems + [f"{where}: {diff}" for where, diff in per_address]
-        results.append(Result(record_set.key, Status.FAIL, "; ".join(lines)))
+            results.append(Result(record_set.key, Status.FAIL, "no answers"))
     return results
 
 
@@ -226,7 +235,10 @@ def _diff(expected: frozenset[RecordValue], actual: frozenset[RecordValue]) -> s
 
 
 def _targets(querier: Querier, names: Iterable[str]) -> tuple[list[tuple[str, str]], list[str]]:
-    """Return (name, address) pairs and the names whose lookup failed."""
+    """Return (name, address) pairs, and a line for each name whose lookup failed.
+
+    A failed lookup counts like an address with no response.
+    """
     targets: list[tuple[str, str]] = []
     problems: list[str] = []
     for name in names:

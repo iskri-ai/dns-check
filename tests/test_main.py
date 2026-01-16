@@ -176,6 +176,14 @@ def test_the_job_log_keeps_details_that_telegram_drops(
     assert f"FAIL soa: {detail}" in capsys.readouterr().out
 
 
+def test_a_fault_behind_an_unknown_status_still_sends_a_message(harness: Any) -> None:
+    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
+    h.store.state["soa"] = Entry(Status.UNKNOWN, NOW - datetime.timedelta(hours=1))
+    assert h.run() == 0
+    assert h.messenger.sent == [f"iskri.io: 1 status change\nFAIL soa: soa detail\n{RUN}"]
+
+
 def test_a_recovery_reports_the_duration(harness: Any) -> None:
     h = harness(all_(Status.OK))
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}

@@ -7,16 +7,20 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+import dns.exception
+import dns.flags
+import dns.message
 import dns.name
 import dns.rdata
 import dns.rdataclass
 import dns.rdatatype
+import dns.rrset
 import pytest
 
 from dnscheck import checks
 from dnscheck.checks import RdapError, Result, Status
 from dnscheck.config import Config, load
-from dnscheck.query import NotDelegated, Records, Referral, Unusable
+from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable
 
 CONFIG = load("""\
 domain: iskri.io
@@ -131,22 +135,89 @@ def test_soa_fails_when_one_sample_lags_and_names_the_instance() -> None:
     assert result == Result("soa", Status.FAIL, "serials differ: 188.68.203.1 [2-ans-prod-spb] 2026111001, all others 2026111002")
 
 
-def test_soa_fails_on_unreachable_addresses_failed_lookups_and_missing_records() -> None:
+def test_soa_unknown_when_an_address_gives_no_response_and_the_rest_agree() -> None:
     def answers(address: str, qname: dns.name.Name, rdtype: str) -> Any:
         if address == SELECTEL["b.ns.selectel.ru"]:
-            return Unusable("unreachable")
+            return Unusable("unreachable", no_response=True)
+        return soa_record(2026111002)
+
+    result = checks.soa(FakeQuerier(answers), CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.UNKNOWN, "b.ns.selectel.ru (77.223.114.2): unreachable")
+
+
+def test_soa_unknown_on_a_failed_address_lookup() -> None:
+    querier = FakeQuerier(lambda *args: soa_record(2026111002))
+    querier.lookups[("d.ns.selectel.ru", "A")] = None
+    assert checks.soa(querier, CONFIG) == Result("soa", Status.UNKNOWN, "d.ns.selectel.ru: address lookup failed")  # type: ignore[arg-type]
+
+
+def test_soa_fails_on_a_received_unusable_answer() -> None:
+    def answers(address: str, qname: dns.name.Name, rdtype: str) -> Any:
+        if address == SELECTEL["c.ns.selectel.ru"]:
+            return Unusable("REFUSED", "7-ans-prod-spb")
+        return soa_record(2026111002)
+
+    result = checks.soa(FakeQuerier(answers), CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.FAIL, "c.ns.selectel.ru (188.68.203.3): REFUSED")
+
+
+def test_soa_failure_outranks_silence_and_lists_wrong_answers_first() -> None:
+    lagging = iter([Records(soa_record(2026111001).values, "2-ans-prod-spb")])
+
+    def answers(address: str, qname: dns.name.Name, rdtype: str) -> Any:
+        if address == SELECTEL["b.ns.selectel.ru"]:
+            return Unusable("unreachable", no_response=True)
         if address == SELECTEL["c.ns.selectel.ru"]:
             return Records(frozenset(), "7-ans-prod-spb")
-        return soa_record(2026111002)
+        return next(lagging, soa_record(2026111002))
 
     querier = FakeQuerier(answers)
     querier.lookups[("d.ns.selectel.ru", "A")] = None
     result = checks.soa(querier, CONFIG)  # type: ignore[arg-type]
     assert result == Result("soa", Status.FAIL, "; ".join([
+        "c.ns.selectel.ru (188.68.203.3) [7-ans-prod-spb]: 0 SOA records",
+        "serials differ: 188.68.203.1 [2-ans-prod-spb] 2026111001, all others 2026111002",
         "d.ns.selectel.ru: address lookup failed",
         "b.ns.selectel.ru (77.223.114.2): unreachable",
-        "c.ns.selectel.ru (188.68.203.3) [7-ans-prod-spb]: 0 SOA records",
     ]))
+
+
+ANSWERS = {
+    "SOA": "a.ns.selectel.ru. support.selectel.ru. 2026111002 10800 3600 604800 60",
+    "A": "203.0.113.10",
+}
+
+
+def transport(silent: str) -> Callable[[dns.message.Message, str, float], dns.message.Message]:
+    """A transport that times out for one address and answers SOA and A for the rest."""
+
+    def send(query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
+        if address == silent:
+            raise dns.exception.Timeout
+        question = query.question[0]
+        response = dns.message.make_response(query)
+        response.flags |= dns.flags.AA
+        response.answer.append(dns.rrset.from_text(
+            question.name, 300, "IN", dns.rdatatype.to_text(question.rdtype), ANSWERS[dns.rdatatype.to_text(question.rdtype)]))
+        return dns.message.from_wire(response.to_wire())
+
+    return send
+
+
+def real_querier(silent: str) -> Querier:
+    addresses = {name: [address] for name, address in SELECTEL.items()}
+    return Querier(transport=transport(silent), resolve=lambda name, rdtype: addresses[name], sleep=lambda s: None)
+
+
+def test_a_timed_out_address_reaches_soa_as_unknown_through_the_real_querier() -> None:
+    result = checks.soa(real_querier(SELECTEL["b.ns.selectel.ru"]), CONFIG)
+    assert result == Result("soa", Status.UNKNOWN, "b.ns.selectel.ru (77.223.114.2): unreachable")
+
+
+def test_a_timed_out_address_reaches_records_as_unknown_through_the_real_querier() -> None:
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.records(real_querier(SELECTEL["b.ns.selectel.ru"]), CONFIG, sets) == [
+        Result("records @ A", Status.UNKNOWN, "77.223.114.2: unreachable")]
 
 
 # expiry
@@ -283,9 +354,34 @@ def test_records_report_each_address_when_they_differ() -> None:
         Result("records @ AAAA", Status.FAIL, "77.223.114.2: REFUSED; 188.68.203.1 [8-ans-prod-spb]: unexpected 2001:db8::1")]
 
 
-def test_records_fail_when_an_address_lookup_fails() -> None:
+def test_records_unknown_on_a_failed_address_lookup() -> None:
     querier = FakeQuerier(by_type({"A": Records(frozenset({rdata("A", "203.0.113.10")}), "6-ans-prod-spb")}))
     querier.lookups[("c.ns.selectel.ru", "A")] = None
     sets = [r for r in CONFIG.records if r.rtype == "A"]
     assert checks.records(querier, CONFIG, sets) == [  # type: ignore[arg-type]
-        Result("records @ A", Status.FAIL, "c.ns.selectel.ru: address lookup failed")]
+        Result("records @ A", Status.UNKNOWN, "c.ns.selectel.ru: address lookup failed")]
+
+
+def test_records_unknown_when_an_address_gives_no_response_and_the_rest_match() -> None:
+    def a_answer(address: str) -> Any:
+        if address == SELECTEL["d.ns.selectel.ru"]:
+            return Unusable("transport error: ConnectionResetError", no_response=True)
+        return Records(frozenset({rdata("A", "203.0.113.10")}), "6-ans-prod-spb")
+
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.records(FakeQuerier(by_type({"A": a_answer})), CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ A", Status.UNKNOWN, "77.223.114.4: transport error: ConnectionResetError")]
+
+
+def test_records_mismatch_outranks_silence() -> None:
+    def a_answer(address: str) -> Any:
+        if address == SELECTEL["d.ns.selectel.ru"]:
+            return Unusable("unreachable", no_response=True)
+        if address == SELECTEL["a.ns.selectel.ru"]:
+            return Records(frozenset({rdata("A", "198.51.100.7")}), "8-ans-prod-spb")
+        return Records(frozenset({rdata("A", "203.0.113.10")}), "6-ans-prod-spb")
+
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.records(FakeQuerier(by_type({"A": a_answer})), CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ A", Status.FAIL,
+               "188.68.203.1 [8-ans-prod-spb]: missing 203.0.113.10, unexpected 198.51.100.7; 77.223.114.4: unreachable")]

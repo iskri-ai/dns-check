@@ -11,7 +11,7 @@ Every 30 minutes the job queries the .io TLD servers, the Selectel nameservers a
 - **expiry**: according to RDAP, the registration does not expire within `min_days_left` days.
 - **records**: each listed record set matches exactly on every Selectel address.
 
-Each check ends as `ok`, `fail` (the domain is wrong) or `unknown` (an outside source, the .io servers or RDAP, could not be checked). Anything uncertain never ends as `ok`. A failing check is re-checked once after 2 minutes, and the second result counts.
+Each check ends as `ok`, `fail` (a server returned wrong or unusable data) or `unknown` (no response arrived, or the .io servers or RDAP could not be read). Anything uncertain never ends as `ok`. A failing check is re-checked once after 2 minutes, and the second result counts.
 
 ## Messages
 
@@ -74,6 +74,7 @@ Tests make no network calls. pytest-socket blocks them.
 ## Known limits
 
 - Unlisted names and record types are not checked. TTLs are not compared.
+- A check that is already failing reports a second, different problem only in the daily summary, because messages report status changes.
 - The Selectel addresses are anycast. The job sees only the Selectel site nearest the GitHub runner.
 - A Selectel instance with a current serial and wrong records is caught only in runs where a record query reaches it.
 - Unreachable .io servers don't change the delegation status, because all .io servers serve the same registry data. The daily summary shows how many answered.

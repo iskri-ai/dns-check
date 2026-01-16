@@ -64,6 +64,8 @@ class Unusable:
 
     reason: str
     nsid: str = "-"
+    no_response: bool = False
+    """No response arrived at all, so the address says nothing about the zone."""
 
 
 def udp_with_tcp_fallback(
@@ -163,7 +165,7 @@ class Querier:
         self, address: str, qname: dns.name.Name, rdtype: str
     ) -> dns.message.Message | Unusable:
         if address in self._dead:
-            return Unusable(UNREACHABLE)
+            return Unusable(UNREACHABLE, no_response=True)
         query = dns.message.make_query(
             qname,
             rdtype,
@@ -188,8 +190,7 @@ class Querier:
                 self._sleep(PAUSE)
         if timeouts == TRIES:
             self._dead.add(address)
-            return Unusable(UNREACHABLE)
-        return Unusable(reason)
+        return Unusable(reason, no_response=True)
 
 
 def _nsid(response: dns.message.Message) -> str:

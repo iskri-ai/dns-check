@@ -150,8 +150,8 @@ def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
         dns.exception.Timeout, dns.exception.Timeout, dns.exception.Timeout,
         respond(answer=(("iskri.io.", "A", "203.0.113.10"),)),
     )
-    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE)
-    assert q.authoritative("192.0.2.1", QNAME, "SOA") == Unusable(UNREACHABLE)
+    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE, no_response=True)
+    assert q.authoritative("192.0.2.1", QNAME, "SOA") == Unusable(UNREACHABLE, no_response=True)
     assert len(transport.calls) == 3
     assert isinstance(q.authoritative("192.0.2.2", QNAME, "A"), Records)
 
@@ -163,9 +163,38 @@ def test_refused_and_transport_errors_do_not_mark_the_address_dead() -> None:
         respond(),
     )
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("REFUSED", "5-ans-prod-spb")
-    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("transport error: ConnectionRefusedError")
+    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(
+        "transport error: ConnectionRefusedError", no_response=True
+    )
     assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans-prod-spb")
     assert len(transport.calls) == 5
+
+
+def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
+    timeouts: list[Outcome] = [dns.exception.Timeout] * 3
+    no_response: list[list[Outcome]] = [
+        timeouts,
+        [OSError] * 3,
+        [dns.exception.Timeout, OSError, dns.exception.Timeout],
+    ]
+    for outcomes in no_response:
+        result = querier(*outcomes)[0].authoritative("192.0.2.1", QNAME, "A")
+        assert isinstance(result, Unusable) and result.no_response, outcomes
+
+    dead, _, _ = querier(*timeouts)
+    dead.authoritative("192.0.2.1", QNAME, "A")
+    assert dead.authoritative("192.0.2.1", QNAME, "SOA") == Unusable(UNREACHABLE, no_response=True)
+
+    answered: list[Outcome] = [
+        respond(rcode=dns.rcode.REFUSED, aa=False),
+        respond(rcode=dns.rcode.SERVFAIL),
+        respond(aa=False),
+        respond(tc=True),
+        respond(answer=(("www.iskri.io.", "CNAME", "target.example.net."),)),
+    ]
+    for outcome in answered:
+        result = querier(outcome)[0].authoritative("192.0.2.1", WWW, "A")
+        assert isinstance(result, Unusable) and not result.no_response, result
 
 
 def test_a_referral_gives_the_delegated_names() -> None:
