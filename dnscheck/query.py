@@ -176,8 +176,7 @@ class Querier:
         for _ in range(TRIES):
             try:
                 response = self._transport(query, address, TIMEOUT)
-                # The transport already retried a truncated UDP answer over
-                # TCP. A final answer that is still truncated may omit records.
+                # reject incomplete answers after the TCP retry
                 if response.flags & dns.flags.TC:
                     return Unusable("truncated response", _nsid(response))
                 return response

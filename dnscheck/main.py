@@ -144,7 +144,7 @@ def _check(
 
     lines = compose(config.domain, change_lines(changes, now), summary)
     if lines is not None:
-        # The job log keeps the full text. Telegram gets a capped copy.
+        # the log keeps what the Telegram cap drops
         print("\n".join([*lines, run_url]))
         try:
             messenger.send(cap(lines, run_url))

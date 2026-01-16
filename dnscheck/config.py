@@ -118,7 +118,7 @@ def _records(raw: Any, domain: str, origin: dns.name.Name) -> tuple[RecordSet, .
                 f"{where}: unsupported type {rtype!r}, use one of {', '.join(SUPPORTED_TYPES)}",
             )
             values = [value] if isinstance(value, str) else value
-            # [] is the only empty value: a blank string is a mistake.
+            # [] is the only empty value
             _need(
                 isinstance(values, list) and all(isinstance(v, str) and v for v in values),
                 f"{where}.{rtype}: expected a non-empty string or a list of non-empty strings",
@@ -135,9 +135,7 @@ def _value(rtype: str, text: str, where: str) -> RecordValue:
     if rtype == "TXT":
         return text.encode("utf-8")
     try:
-        # Names inside values are always absolute. from_text relativizes
-        # them by default, and a relative name never equals the absolute
-        # name in a DNS answer.
+        # keep names absolute, as in DNS answers
         return dns.rdata.from_text(
             dns.rdataclass.IN,
             dns.rdatatype.from_text(rtype),

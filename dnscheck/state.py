@@ -27,7 +27,7 @@ SETUP_HINT = (
     " && git add state.json && git commit -m 'chore(state): add empty state'"
     " && git push origin state"
 )
-# Answers only "get" requests, with the token from the environment.
+# answers "get" requests only
 CREDENTIAL_HELPER = (
     '!f() { test "$1" = get || exit 0; echo username=x-access-token;'
     ' echo "password=$GITHUB_TOKEN"; }; f'
@@ -129,8 +129,7 @@ class Store:
             ["git", *args], cwd=self._repo, input=stdin, capture_output=True, env=env, check=False
         )
         if result.returncode != 0:
-            # The job log gets git's own output, for diagnosis. GitHub masks
-            # the token there. Telegram only ever sees our wording.
+            # keep raw git errors out of Telegram
             sys.stderr.write(result.stderr.decode(errors="replace"))
             raise StateError(f"git {what} on the {BRANCH} branch failed (exit {result.returncode})")
         return result.stdout.decode().strip()
