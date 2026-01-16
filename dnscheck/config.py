@@ -118,9 +118,10 @@ def _records(raw: Any, domain: str, origin: dns.name.Name) -> tuple[RecordSet, .
                 f"{where}: unsupported type {rtype!r}, use one of {', '.join(SUPPORTED_TYPES)}",
             )
             values = [value] if isinstance(value, str) else value
+            # [] is the only empty value: a blank string is a mistake.
             _need(
-                isinstance(values, list) and all(isinstance(v, str) for v in values),
-                f"{where}.{rtype}: expected a string or a list of strings",
+                isinstance(values, list) and all(isinstance(v, str) and v for v in values),
+                f"{where}.{rtype}: expected a non-empty string or a list of non-empty strings",
             )
             expected = frozenset(_value(rtype, v, f"{where}.{rtype}") for v in values)
             if rtype == "CNAME" and expected:
