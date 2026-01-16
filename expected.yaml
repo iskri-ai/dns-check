@@ -1,9 +1,9 @@
-# Expected DNS state of iskri.io, checked by .github/workflows/dns-check.yml.
+# Expected DNS state of iskri.io, checked by .github/workflows/dns-check.yml
 #
-# records: names are relative to the domain, "@" is the apex. A listed
-# type must match exactly, [] means "must not exist", unlisted types and
-# names are not checked. Supported types: A, AAAA, CNAME, MX, TXT, CAA.
-# Always quote TXT values.
+# Record names are relative to the domain, and "@" stands for the apex.
+# Each listed type must match exactly, and [] means the type must not
+# exist. Names and types that aren't listed are not checked. The supported
+# types are A, AAAA, CNAME, MX, TXT and CAA. Always quote TXT values.
 domain: iskri.io
 nameservers:
   - a.ns.selectel.ru
