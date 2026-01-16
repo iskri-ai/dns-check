@@ -69,7 +69,9 @@ def heartbeat_lines(
         ok = sum(r.status is Status.OK for r in records)
         lines.append(f"records: {ok}/{len(records)} ok")
         lines.extend(_problem(r, since) for r in records if r.status is not Status.OK)
-    if days_since_commit is not None and days_since_commit >= SCHEDULE_WARNING_DAYS:
+    if days_since_commit is None:
+        lines.append("could not read the date of the latest commit on master")
+    elif days_since_commit >= SCHEDULE_WARNING_DAYS:
         lines.append(
             f"no commits on master for {days_since_commit} days. GitHub may disable the schedule"
             f" at {SCHEDULE_DISABLE_DAYS} days without activity, push a commit to reset it."
