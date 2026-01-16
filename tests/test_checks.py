@@ -260,10 +260,17 @@ def test_hostile_dns_text_never_starts_a_new_message_line() -> None:
 NOW = datetime.datetime(2026, 11, 11, 12, 0, tzinfo=datetime.UTC)
 
 
-def rdap(events: list[dict[str, str]], ldh_name: str = "iskri.io") -> Callable[[str], bytes]:
+LIVE_STATUS = ["client delete prohibited", "client transfer prohibited"]
+MISSING = object()
+
+
+def rdap(events: list[dict[str, str]], ldh_name: str = "iskri.io", status: object = LIVE_STATUS) -> Callable[[str], bytes]:
     def fetch(url: str) -> bytes:
         assert url == "https://rdap.example/rdap/domain/iskri.io"
-        return json.dumps({"ldhName": ldh_name, "events": events}).encode()
+        data: dict[str, object] = {"ldhName": ldh_name, "events": events}
+        if status is not MISSING:
+            data["status"] = status
+        return json.dumps(data).encode()
     return fetch
 
 
@@ -314,6 +321,40 @@ def test_expiry_unknown_cases(fetch: Callable[[str], bytes], detail: str) -> Non
     result = checks.expiry(CONFIG, NOW, fetch)
     assert result.status is Status.UNKNOWN
     assert detail in result.detail
+
+
+AUTO_RENEWED = "auto-renewed by the registry, confirm the renewal is paid at the registrar"
+
+
+@pytest.mark.parametrize("status", [["auto renew period"], ["client transfer prohibited", "autoRenewPeriod"]])
+def test_expiry_fails_on_an_auto_renewal_even_a_year_ahead(status: list[str]) -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2027-11-10T09:43:44Z"), status=status))
+    assert result == Result("expiry", Status.FAIL, f"{AUTO_RENEWED} (expires 2027-11-10, 363 days left)")
+
+
+@pytest.mark.parametrize("status", [MISSING, "ok", [], ["active", 1], None])
+def test_expiry_unknown_on_a_missing_empty_or_malformed_status_array(status: object) -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2027-11-10T09:43:44Z"), status=status))
+    assert result == Result("expiry", Status.UNKNOWN, "RDAP: missing, empty or malformed status array")
+
+
+@pytest.mark.parametrize("status", [["auto renew period", 1], ["autoRenewPeriod", None]])
+def test_a_malformed_neighbor_does_not_hide_an_auto_renewal(status: list[object]) -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2027-11-10T09:43:44Z"), status=status))
+    assert result == Result("expiry", Status.FAIL, "; ".join([
+        f"{AUTO_RENEWED} (expires 2027-11-10, 363 days left)", "RDAP: missing, empty or malformed status array"]))
+
+
+def test_a_confirmed_expiry_problem_outranks_an_unreadable_part() -> None:
+    expired = checks.expiry(CONFIG, NOW, rdap(expiration("2026-11-01T00:00:00Z"), status=MISSING))
+    assert expired == Result("expiry", Status.FAIL, "expired on 2026-11-01; RDAP: missing, empty or malformed status array")
+    renewed = checks.expiry(CONFIG, NOW, rdap(expiration("next year"), status=["auto renew period"]))
+    assert renewed == Result("expiry", Status.FAIL, f"{AUTO_RENEWED}; RDAP: cannot parse the expiration date 'next year'")
+
+
+def test_a_response_for_another_domain_stays_unknown_before_anything_else() -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2026-11-01T00:00:00Z"), "other.io", ["auto renew period"]))
+    assert result.status is Status.UNKNOWN
 
 
 class FakeResponse(io.BytesIO):

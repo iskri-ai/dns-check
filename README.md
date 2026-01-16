@@ -8,7 +8,7 @@ Every 30 minutes the job queries the .io TLD servers, the Selectel nameservers a
 
 - **delegation**: the .io servers delegate the domain to exactly the nameservers in `expected.yaml`.
 - **soa**: every Selectel address returns the same SOA serial. Each address gets 8 queries, so one lagging backend instance is unlikely to hide.
-- **expiry**: according to RDAP, the registration does not expire within `min_days_left` days.
+- **expiry**: according to RDAP, the registration does not expire within `min_days_left` days, and the registry has not auto-renewed it. While RDAP shows the auto-renew grace period, the check fails even when the renewal is paid.
 - **records**: each listed record set matches exactly on every Selectel address.
 
 Each check ends as `ok`, `fail` (a server returned wrong or unusable data) or `unknown` (no response arrived, or the .io servers or RDAP could not be read). Anything uncertain never ends as `ok`. An `unknown` check runs once more after 2 minutes, and the second result counts. A `fail` is reported in the run that found it.

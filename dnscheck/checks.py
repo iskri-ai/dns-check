@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable
+from typing import Any
 
 import dns.name
 from dns.rdtypes.ANY.SOA import SOA
@@ -27,6 +28,7 @@ RDAP_TRIES = 3
 RDAP_TIMEOUT = 10.0
 RDAP_USER_AGENT = "rdap-client/1.0"
 """The RDAP server answers 403 to the default Python-urllib User-Agent."""
+AUTO_RENEWED = "auto-renewed by the registry, confirm the renewal is paid at the registrar"
 
 type Fetch = Callable[[str], bytes]
 """Fetch a URL and return the body of a 200 response. Raises RdapError."""
@@ -139,6 +141,41 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
     ldh_name = data.get("ldhName")
     if not isinstance(ldh_name, str) or ldh_name.lower() != config.domain:
         return Result(key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}")
+    fails: list[str] = []
+    unknowns: list[str] = []
+    status = data.get("status")
+    entries = status if isinstance(status, list) else []
+    if any(isinstance(value, str) and _squash(value) == "autorenewperiod" for value in entries):
+        fails.append(AUTO_RENEWED)
+    # a domain must have at least one EPP status
+    if not entries or not all(isinstance(value, str) for value in entries):
+        unknowns.append("RDAP: missing, empty or malformed status array")
+
+    facts = ""
+    expires, problem = _expiration(data)
+    if expires is None:
+        unknowns.append(problem)
+    else:
+        left = expires - now
+        date = expires.astimezone(datetime.UTC).date().isoformat()
+        if left < datetime.timedelta(0):
+            fails.append(f"expired on {date}")
+        else:
+            facts = f"expires {date}, {left.days} days left"
+            if left < datetime.timedelta(days=config.min_days_left):
+                fails.append(f"{facts}, minimum {config.min_days_left}")
+            elif fails:
+                fails[-1] += f" ({facts})"
+
+    if fails:
+        return Result(key, Status.FAIL, "; ".join(fails + unknowns))
+    if unknowns:
+        return Result(key, Status.UNKNOWN, "; ".join(unknowns))
+    return Result(key, Status.OK, facts)
+
+
+def _expiration(data: dict[str, Any]) -> tuple[datetime.datetime | None, str]:
+    """Return the single expiration date, or None and why it can't be read."""
     events = data.get("events")
     dates = [
         event.get("eventDate")
@@ -146,22 +183,20 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
         if isinstance(event, dict) and event.get("eventAction") == "expiration"
     ]
     if len(dates) != 1:
-        return Result(key, Status.UNKNOWN, f"RDAP: expected one expiration event, found {len(dates)}")
+        return None, f"RDAP: expected one expiration event, found {len(dates)}"
     try:
         expires = datetime.datetime.fromisoformat(str(dates[0]))
     except ValueError:
-        return Result(key, Status.UNKNOWN, f"RDAP: cannot parse the expiration date {dates[0]!r}")
+        return None, f"RDAP: cannot parse the expiration date {dates[0]!r}"
     if expires.tzinfo is None:
-        return Result(key, Status.UNKNOWN, f"RDAP: the expiration date {dates[0]!r} has no time zone")
+        return None, f"RDAP: the expiration date {dates[0]!r} has no time zone"
+    return expires, ""
 
-    left = expires - now
-    date = expires.astimezone(datetime.UTC).date().isoformat()
-    if left < datetime.timedelta(0):
-        return Result(key, Status.FAIL, f"expired on {date}")
-    facts = f"expires {date}, {left.days} days left"
-    if left < datetime.timedelta(days=config.min_days_left):
-        return Result(key, Status.FAIL, f"{facts}, minimum {config.min_days_left}")
-    return Result(key, Status.OK, facts)
+
+def _squash(text: str) -> str:
+    """Lowercase and drop everything but letters and digits, so "auto renew period"
+    and "autoRenewPeriod" compare equal."""
+    return "".join(char for char in text.lower() if char.isalnum())
 
 
 def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list[Result]:
