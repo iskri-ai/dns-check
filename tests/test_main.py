@@ -113,12 +113,16 @@ class Harness:
             sleep=self.sleeps.append,
             commit_time=self.commit_time,
         )
-        return run(self.config, self.config.parent, heartbeat, {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}, deps)
+        code = run(self.config, self.config.parent, heartbeat, {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}, deps)
+        assert not self.passes, f"unused scripted passes: {self.passes}"
+        return code
 
 
 def all_(status: Status, **overrides: Status) -> dict[str, Status]:
     statuses = {key: status for key in KEYS}
-    statuses.update({key.replace("_", " "): value for key, value in overrides.items()})
+    for name, value in overrides.items():
+        assert name in statuses, f"unknown check {name!r}"
+        statuses[name] = value
     return statuses
 
 
@@ -144,8 +148,8 @@ def test_an_unchanged_run_sends_nothing_and_writes_nothing(harness: Any) -> None
     assert h.store.writes == []
 
 
-def test_the_recheck_repeats_only_failing_checks_and_its_result_counts(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL, records_=Status.OK), {"soa": Status.OK})
+def test_the_recheck_repeats_only_unknown_checks_and_its_result_counts(harness: Any) -> None:
+    h = harness(all_(Status.OK, soa=Status.UNKNOWN), {"soa": Status.OK})
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
     assert h.run() == 0
     assert h.sleeps == [120.0]
@@ -154,8 +158,24 @@ def test_the_recheck_repeats_only_failing_checks_and_its_result_counts(harness: 
     assert h.store.writes == []
 
 
+def test_a_failure_is_reported_in_the_run_that_found_it(harness: Any) -> None:
+    h = harness(all_(Status.OK, soa=Status.FAIL, expiry=Status.UNKNOWN), {"expiry": Status.OK})
+    h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
+    assert h.run() == 0
+    assert h.asked == [KEYS, ["expiry"]]
+    assert h.messenger.sent == [f"iskri.io: 1 status change\nFAIL soa: soa detail\n{RUN}"]
+
+
+def test_a_failure_alone_starts_no_recheck(harness: Any) -> None:
+    h = harness(all_(Status.OK, soa=Status.FAIL))
+    h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
+    assert h.run() == 0
+    assert h.sleeps == []
+    assert h.asked == [KEYS]
+
+
 def test_a_confirmed_failure_sends_one_message_and_saves_the_state(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     h.store.state = {key: Entry(Status.OK, NOW - datetime.timedelta(days=1)) for key in KEYS}
     assert h.run() == 0
     assert h.messenger.sent == [f"iskri.io: 1 status change\nFAIL soa: soa detail\n{RUN}"]
@@ -167,7 +187,7 @@ def test_a_confirmed_failure_sends_one_message_and_saves_the_state(harness: Any)
 def test_the_job_log_keeps_details_that_telegram_drops(
     harness: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     detail = "x" * 5000 + " UNIQUE-DIAGNOSTIC"
     monkeypatch.setattr(checks, "soa", lambda q, c: Result("soa", Status.FAIL, detail))
     assert h.run() == 0
@@ -177,7 +197,7 @@ def test_the_job_log_keeps_details_that_telegram_drops(
 
 
 def test_a_fault_behind_an_unknown_status_still_sends_a_message(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
     h.store.state["soa"] = Entry(Status.UNKNOWN, NOW - datetime.timedelta(hours=1))
     assert h.run() == 0
@@ -219,7 +239,7 @@ def test_an_unreadable_commit_date_is_reported_in_the_heartbeat(harness: Any) ->
 
 
 def test_a_failed_send_aborts_without_saving_the_state(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     h.messenger.failures = 1
     assert h.run() == 1
     assert h.store.writes == []
@@ -228,7 +248,7 @@ def test_a_failed_send_aborts_without_saving_the_state(harness: Any) -> None:
 
 
 def test_reported_stays_unset_when_the_abort_message_fails_too(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     h.messenger.failures = 2
     assert h.run() == 1
     assert h.output.read_text() == ""
@@ -244,7 +264,7 @@ def test_an_unreadable_state_aborts_with_the_setup_hint(harness: Any) -> None:
 
 
 def test_a_failed_push_aborts_after_the_message(harness: Any) -> None:
-    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    h = harness(all_(Status.OK, soa=Status.FAIL))
     h.store.fail_write = True
     assert h.run() == 1
     assert h.messenger.sent[0].startswith("iskri.io: 1 status change")

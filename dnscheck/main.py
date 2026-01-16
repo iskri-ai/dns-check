@@ -1,7 +1,7 @@
 """One run of the monitor.
 
-The run loads expected.yaml, reads the state, checks, re-checks what
-failed after 2 minutes, sends one message and saves the state. It exits
+The run loads expected.yaml, reads the state, checks, re-checks unknown
+results after 2 minutes, sends one message and saves the state. It exits
 0 whatever the domain's status, and 1 only when it could not finish its
 work (aborted). An aborted run tries to send its reason to Telegram.
 """
@@ -159,12 +159,14 @@ def _check(
 
 
 def _run_checks(config: Config, deps: Deps) -> list[Result]:
+    """Re-check only unknown results. A fail stays, because the second pass
+    can't tell a fixed fault from one it didn't sample."""
     first = _one_pass(config, deps, None)
-    failing = {r.key for r in first if r.status is not Status.OK}
-    if not failing:
+    unknown = {r.key for r in first if r.status is Status.UNKNOWN}
+    if not unknown:
         return first
     deps.sleep(RECHECK_DELAY)
-    second = {r.key: r for r in _one_pass(config, deps, failing)}
+    second = {r.key: r for r in _one_pass(config, deps, unknown)}
     return [second.get(r.key, r) for r in first]
 
 

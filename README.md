@@ -7,11 +7,11 @@ Every 30 minutes the job queries the .io TLD servers, the Selectel nameservers a
 ## Checks
 
 - **delegation**: the .io servers delegate the domain to exactly the nameservers in `expected.yaml`.
-- **soa**: every Selectel address returns the same SOA serial. Each address gets 8 queries in each pass, the check and its re-check, so one lagging backend instance is unlikely to hide.
+- **soa**: every Selectel address returns the same SOA serial. Each address gets 8 queries, so one lagging backend instance is unlikely to hide.
 - **expiry**: according to RDAP, the registration does not expire within `min_days_left` days.
 - **records**: each listed record set matches exactly on every Selectel address.
 
-Each check ends as `ok`, `fail` (a server returned wrong or unusable data) or `unknown` (no response arrived, or the .io servers or RDAP could not be read). Anything uncertain never ends as `ok`. A failing check is re-checked once after 2 minutes, and the second result counts.
+Each check ends as `ok`, `fail` (a server returned wrong or unusable data) or `unknown` (no response arrived, or the .io servers or RDAP could not be read). Anything uncertain never ends as `ok`. An `unknown` check runs once more after 2 minutes, and the second result counts. A `fail` is reported in the run that found it.
 
 ## Messages
 
@@ -24,6 +24,8 @@ Each check ends as `ok`, `fail` (a server returned wrong or unusable data) or `u
 The comments at the top of `expected.yaml` describe the format. The loader rejects a file with any mistake that could let a check pass silently, and CI loads the real file on every pull request.
 
 A mismatch is reported while either change is pending. To avoid a `fail` message and the recovery message after it, land both changes between two scheduled checks, which start at :07 and :37 past each hour.
+
+Any zone edit, even to an unlisted record, changes the SOA serial. A run that queries the nameservers while they update can report a `soa` fail, followed by a recovery.
 
 ## Setup
 
