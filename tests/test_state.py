@@ -1,0 +1,126 @@
+import datetime
+import subprocess
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from dnscheck.checks import Status
+from dnscheck.state import BOT, COMMIT_MESSAGE, Entry, StateError, Store, dump, parse
+
+T0 = datetime.datetime(2026, 11, 11, 12, 7, tzinfo=datetime.UTC)
+
+
+@pytest.fixture(autouse=True)
+def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the developer's git config out of the tests."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name in ("GIT_AUTHOR_NAME", "GIT_COMMITTER_NAME"):
+        monkeypatch.setenv(name, "Test")
+    for name in ("GIT_AUTHOR_EMAIL", "GIT_COMMITTER_EMAIL"):
+        monkeypatch.setenv(name, "test@example.invalid")
+
+
+def git(cwd: Path, *args: str, stdin: bytes | None = None) -> str:
+    return subprocess.run(["git", *args], cwd=cwd, input=stdin, check=True, capture_output=True).stdout.decode().strip()
+
+
+@pytest.fixture
+def repos(tmp_path: Path) -> tuple[Path, Path]:
+    """A bare origin with master and a state branch holding '{}', and a clone of master."""
+    origin = tmp_path / "origin.git"
+    seed = tmp_path / "seed"
+    work = tmp_path / "work"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "master", str(origin)], check=True)
+    subprocess.run(["git", "init", "-q", "-b", "master", str(seed)], check=True)
+    (seed / "README.md").write_text("# dns-check\n")
+    git(seed, "add", "README.md")
+    git(seed, "commit", "-q", "-m", "first commit")
+    git(seed, "switch", "-q", "--orphan", "state")
+    (seed / "state.json").write_text("{}\n")
+    git(seed, "add", "state.json")
+    git(seed, "commit", "-q", "-m", "chore(state): add empty state")
+    git(seed, "push", "-q", str(origin), "master", "state")
+    subprocess.run(["git", "clone", "-q", "--branch", "master", str(origin), str(work)], check=True)
+    return origin, work
+
+
+def test_read_write_round_trip(repos: tuple[Path, Path]) -> None:
+    origin, work = repos
+    store = Store(work)
+    assert store.read() == {}
+
+    state = {"soa": Entry(Status.FAIL, T0), "records @ TXT": Entry(Status.OK, T0)}
+    store.write(state)
+
+    assert Store(work).read() == state
+    assert git(origin, "log", "-1", "--format=%s|%an", "state") == f"{COMMIT_MESSAGE}|{BOT}"
+    assert git(origin, "show", "state:state.json") == dump(state).strip()
+    assert git(origin, "rev-list", "--count", "state") == "2"
+    assert git(work, "status", "--porcelain") == ""
+    assert git(work, "branch", "--show-current") == "master"
+
+
+def test_a_missing_branch_aborts(tmp_path: Path, repos: tuple[Path, Path]) -> None:
+    origin, work = repos
+    git(origin, "branch", "-D", "state")
+    with pytest.raises(StateError, match="git fetch on the state branch failed"):
+        Store(work).read()
+
+
+def test_push_uses_the_credential_helper_and_never_the_token(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, work = repos
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_secret_token_value")
+    commands: list[list[str]] = []
+
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        commands.append(args)
+        return subprocess.run(args, **kwargs)
+
+    store = Store(work, run=run)
+    store.read()
+    store.write({"soa": Entry(Status.OK, T0)})
+
+    push = next(c for c in commands if "push" in c)
+    assert push[1:3] == ["-c", "credential.helper="]
+    assert push[3:5] == ["-c", push[4]] and push[4].startswith("credential.helper=!f()")
+    assert "$GITHUB_TOKEN" in push[4]
+    assert all("ghs_secret_token_value" not in part for command in commands for part in command)
+
+
+def test_git_errors_carry_only_our_wording(repos: tuple[Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
+    _, work = repos
+
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args, 128, b"", b"fatal: https://x-access-token:secret@example/ denied")
+
+    with pytest.raises(StateError) as excinfo:
+        Store(work, run=run).read()
+    assert str(excinfo.value) == "git fetch on the state branch failed (exit 128)"
+    assert "secret" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "not json",
+        "[]",
+        '{"soa": "ok"}',
+        '{"soa": {"status": "ok"}}',
+        '{"soa": {"status": "great", "since": "2026-11-11T12:07:00+00:00"}}',
+        '{"soa": {"status": "ok", "since": "yesterday"}}',
+        '{"soa": {"status": "ok", "since": "2026-11-11T12:07:00"}}',
+        '{"soa": {"status": "ok", "since": "2026-11-11T12:07:00+00:00", "detail": "x"}}',
+    ],
+)
+def test_invalid_state_aborts(text: str) -> None:
+    with pytest.raises(StateError):
+        parse(text)
+
+
+def test_writing_before_reading_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(StateError):
+        Store(tmp_path).write({})
