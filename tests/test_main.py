@@ -164,6 +164,18 @@ def test_a_confirmed_failure_sends_one_message_and_saves_the_state(harness: Any)
     assert h.output.read_text() == ""
 
 
+def test_the_job_log_keeps_details_that_telegram_drops(
+    harness: Any, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    h = harness(all_(Status.OK, soa=Status.FAIL), {"soa": Status.FAIL})
+    detail = "x" * 5000 + " UNIQUE-DIAGNOSTIC"
+    monkeypatch.setattr(checks, "soa", lambda q, c: Result("soa", Status.FAIL, detail))
+    assert h.run() == 0
+    assert "UNIQUE-DIAGNOSTIC" not in h.messenger.sent[0]
+    assert len(h.messenger.sent[0]) <= 4000
+    assert f"FAIL soa: {detail}" in capsys.readouterr().out
+
+
 def test_a_recovery_reports_the_duration(harness: Any) -> None:
     h = harness(all_(Status.OK))
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}

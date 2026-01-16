@@ -92,12 +92,12 @@ def test_heartbeat_warns_from_50_days_without_commits() -> None:
 
 
 def test_compose_sends_nothing_without_changes_or_heartbeat() -> None:
-    assert compose("iskri.io", [], None, RUN) is None
+    assert compose("iskri.io", [], None) is None
 
 
 def test_compose_puts_changes_and_heartbeat_in_one_message() -> None:
-    text = compose("iskri.io", ["FAIL soa: x"], ["soa fail: x"], RUN)
-    assert text == "iskri.io: 1 status change\nFAIL soa: x\n\niskri.io: daily summary\nsoa fail: x\n" + RUN
+    lines = compose("iskri.io", ["FAIL soa: x"], ["soa fail: x"])
+    assert lines == ["iskri.io: 1 status change", "FAIL soa: x", "", "iskri.io: daily summary", "soa fail: x"]
 
 
 def test_abort_text() -> None:

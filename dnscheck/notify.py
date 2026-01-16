@@ -79,10 +79,11 @@ def heartbeat_lines(
     return lines
 
 
-def compose(
-    domain: str, changes: list[str], heartbeat: list[str] | None, run_url: str
-) -> str | None:
-    """Return the run's single message, or None when there is nothing to send."""
+def compose(domain: str, changes: list[str], heartbeat: list[str] | None) -> list[str] | None:
+    """Return the lines of the run's single message, or None when there is nothing to send.
+
+    The caller logs the full lines and caps only what goes to Telegram.
+    """
     lines: list[str] = []
     if changes:
         noun = "change" if len(changes) == 1 else "changes"
@@ -91,9 +92,7 @@ def compose(
         if lines:
             lines.append("")
         lines += [f"{domain}: daily summary", *heartbeat]
-    if not lines:
-        return None
-    return cap(lines, run_url)
+    return lines or None
 
 
 def abort_text(domain: str, reason: str, run_url: str) -> str:

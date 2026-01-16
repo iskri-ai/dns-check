@@ -21,7 +21,16 @@ from typing import Protocol
 from dnscheck import checks
 from dnscheck.checks import Result, Status
 from dnscheck.config import Config, ConfigError, load_file
-from dnscheck.notify import Change, Telegram, TelegramError, abort_text, change_lines, compose, heartbeat_lines
+from dnscheck.notify import (
+    Change,
+    Telegram,
+    TelegramError,
+    abort_text,
+    cap,
+    change_lines,
+    compose,
+    heartbeat_lines,
+)
 from dnscheck.query import Querier
 from dnscheck.state import SETUP_HINT, Entry, State, StateError, Store
 
@@ -133,11 +142,12 @@ def _check(
         since = {key: entry.since for key, entry in new_state.items()}
         summary = heartbeat_lines(results, since, days)
 
-    text = compose(config.domain, change_lines(changes, now), summary, run_url)
-    if text is not None:
-        print(text)
+    lines = compose(config.domain, change_lines(changes, now), summary)
+    if lines is not None:
+        # The job log keeps the full text. Telegram gets a capped copy.
+        print("\n".join([*lines, run_url]))
         try:
-            messenger.send(text)
+            messenger.send(cap(lines, run_url))
         except TelegramError as exc:
             raise Aborted(str(exc)) from exc
 
