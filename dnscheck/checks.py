@@ -79,7 +79,7 @@ def delegation(querier: Querier, config: Config) -> Result:
                 else:
                     wrong.append(f"{where} [{result.nsid}]: delegates to {_names(result.nameservers)}")
             elif isinstance(result, NotDelegated):
-                wrong.append(f"{where} [{result.nsid}]: the domain does not exist (NXDOMAIN)")
+                wrong.append(f"{where} [{result.nsid}]: {result.reason}")
             else:
                 silent.append(f"{where}: {result.reason}")
 

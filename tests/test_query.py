@@ -212,13 +212,19 @@ def test_a_referral_gives_the_delegated_names() -> None:
     )
 
 
+IO_SOA = (("io.", "SOA", "a0.nic.io. hostmaster.example. 1 2 3 4 5"),)
+
+
 def test_referral_classification() -> None:
-    assert querier(respond(rcode=dns.rcode.NXDOMAIN))[0].referral("192.0.2.1", QNAME) == NotDelegated("5-ans-prod-spb")
+    nxdomain = querier(respond(rcode=dns.rcode.NXDOMAIN, authority=IO_SOA))[0].referral("192.0.2.1", QNAME)
+    assert nxdomain == NotDelegated("the domain does not exist (NXDOMAIN)", "5-ans-prod-spb")
+    nodata = querier(respond(authority=IO_SOA))[0].referral("192.0.2.1", QNAME)
+    assert nodata == NotDelegated("the registry has no NS records for the domain", "5-ans-prod-spb")
     cases: list[tuple[Outcome, str]] = [
         (respond(rcode=dns.rcode.NXDOMAIN, aa=False), "NXDOMAIN"),
         (respond(rcode=dns.rcode.REFUSED, aa=False), "REFUSED"),
         (respond(answer=(("iskri.io.", "NS", "a.ns.selectel.ru."),)), "unexpected answer"),
-        (respond(aa=False, authority=(("io.", "SOA", "a0.nic.io. hostmaster.example. 1 2 3 4 5"),)), "no NS records"),
+        (respond(aa=False, authority=IO_SOA), "no NS records"),
     ]
     for outcome, reason in cases:
         result = querier(outcome)[0].referral("192.0.2.1", QNAME)

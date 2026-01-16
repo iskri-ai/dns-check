@@ -90,14 +90,16 @@ def test_delegation_ok_when_every_answer_is_correct() -> None:
     assert result == Result("delegation", Status.OK, "a.ns.selectel.ru, b.ns.selectel.ru, c.ns.selectel.ru, d.ns.selectel.ru (4/4 .io servers answered)")
 
 
-def test_delegation_fails_on_one_wrong_set_or_nxdomain() -> None:
+def test_delegation_fails_on_a_wrong_set_nxdomain_or_nodata() -> None:
     referrals = good_referrals()
     referrals[IO["b0.nic.io"]] = Referral(frozenset({"ns1.evil.example"}), "SCL1")
-    referrals[IO["c0.nic.io"]] = NotDelegated("DXB1")
+    referrals[IO["c0.nic.io"]] = NotDelegated("the domain does not exist (NXDOMAIN)", "DXB1")
+    referrals[IO["a2.nic.io"]] = NotDelegated("the registry has no NS records for the domain", "ASH3")
     result = checks.delegation(FakeQuerier(referrals=referrals), CONFIG)  # type: ignore[arg-type]
     assert result.status is Status.FAIL
     assert "b0.nic.io (65.22.161.17) [SCL1]: delegates to ns1.evil.example" in result.detail
     assert "c0.nic.io (65.22.162.17) [DXB1]: the domain does not exist (NXDOMAIN)" in result.detail
+    assert "a2.nic.io (65.22.163.17) [ASH3]: the registry has no NS records for the domain" in result.detail
 
 
 def test_delegation_ok_with_unreachable_servers_and_shows_the_count() -> None:

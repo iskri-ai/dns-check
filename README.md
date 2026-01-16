@@ -79,5 +79,5 @@ Tests make no network calls. pytest-socket blocks them.
 - A check that is already failing reports a second, different problem only in the daily summary, because messages report status changes.
 - The Selectel addresses are anycast. The job sees only the Selectel site nearest the GitHub runner.
 - A Selectel instance with a current serial and wrong records is caught only in runs where a record query reaches it.
-- Unreachable .io servers don't change the delegation status, because all .io servers serve the same registry data. The daily summary shows how many answered.
+- A .io server that gives no usable answer doesn't change the delegation status, because all .io servers serve the same registry data. The daily summary shows how many answered.
 - The Telegram chat and thread IDs are variables, so GitHub shows them in the public run logs. They're useless without the bot token, which is a masked secret.

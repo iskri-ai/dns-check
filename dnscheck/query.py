@@ -53,8 +53,9 @@ class Referral:
 
 @dataclasses.dataclass(frozen=True)
 class NotDelegated:
-    """The TLD says authoritatively that the domain doesn't exist."""
+    """The TLD says authoritatively that the domain isn't delegated."""
 
+    reason: str
     nsid: str
 
 
@@ -142,7 +143,7 @@ class Querier:
         nsid = _nsid(response)
         rcode = response.rcode()
         if rcode == dns.rcode.NXDOMAIN and response.flags & dns.flags.AA:
-            return NotDelegated(nsid)
+            return NotDelegated("the domain does not exist (NXDOMAIN)", nsid)
         if rcode != dns.rcode.NOERROR:
             return Unusable(dns.rcode.to_text(rcode), nsid)
         if response.answer:
@@ -155,6 +156,8 @@ class Querier:
             and rrset.rdclass == dns.rdataclass.IN
         ]
         if len(ns_sets) != 1:
+            if not ns_sets and response.flags & dns.flags.AA:
+                return NotDelegated("the registry has no NS records for the domain", nsid)
             return Unusable("no NS records for the domain in the referral", nsid)
         names = frozenset(
             str(rdata.target).lower().rstrip(".") for rdata in ns_sets[0] if isinstance(rdata, NS)
