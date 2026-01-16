@@ -19,6 +19,7 @@ from dnscheck.query import (
     Records,
     Referral,
     Unusable,
+    printable,
 )
 
 QNAME = dns.name.from_text("iskri.io.")
@@ -203,6 +204,26 @@ def test_a_tcp_answer_cut_off_mid_read_counts_as_no_response() -> None:
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("transport error: EOFError", no_response=True)
     assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans-prod-spb")
     assert len(transport.calls) == 4
+
+
+def test_printable_escapes_backslashes_and_everything_non_printable() -> None:
+    assert printable("a b é") == "a b é"
+    assert printable("x\ny\r\x1b[31m") == "x\\ny\\r\\x1b[31m"
+    assert printable("\x85\u2028\u2029\u202e\t") == "\\x85\\u2028\\u2029\\u202e\\t"
+    assert printable("a\\nb") == "a\\\\nb"
+
+
+def test_a_hostile_nsid_is_escaped() -> None:
+    q, _, _ = querier(respond(nsid=b"5-ans\n::warning::x\x1b"))
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans\\n::warning::x\\x1b")
+
+
+def test_an_unexpected_answer_keeps_dnspython_escaping() -> None:
+    uri = (("www.iskri.io.", "URI", '10 1 "ftp://x/\\010::warning::uri"'),)
+    result = querier(respond(answer=uri))[0].authoritative("192.0.2.1", WWW, "A")
+    assert isinstance(result, Unusable)
+    assert result.reason.startswith("unexpected answer: ")
+    assert len(result.reason.splitlines()) == 1
 
 
 def test_a_referral_gives_the_delegated_names() -> None:

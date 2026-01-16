@@ -19,7 +19,7 @@ import dns.name
 from dns.rdtypes.ANY.SOA import SOA
 
 from dnscheck.config import Config, RecordSet, RecordValue
-from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable
+from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable, printable
 
 SOA_SAMPLES = 8
 """SOA queries per address and pass, so one lagging backend instance is unlikely to hide."""
@@ -219,7 +219,8 @@ def fetch_rdap(url: str, sleep: Callable[[float], None] = time.sleep) -> bytes:
 
 def format_value(value: RecordValue) -> str:
     if isinstance(value, bytes):
-        return '"' + value.decode("utf-8", errors="replace") + '"'
+        return '"' + printable(value.decode("utf-8", errors="replace")) + '"'
+    # dnspython text output already escapes control bytes
     return value.to_text()
 
 

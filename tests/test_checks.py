@@ -7,6 +7,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+import dns.edns
 import dns.exception
 import dns.flags
 import dns.message
@@ -20,6 +21,7 @@ import pytest
 from dnscheck import checks
 from dnscheck.checks import RdapError, Result, Status
 from dnscheck.config import Config, load
+from dnscheck.notify import Change, change_lines
 from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable
 
 CONFIG = load("""\
@@ -220,6 +222,37 @@ def test_a_timed_out_address_reaches_records_as_unknown_through_the_real_querier
     sets = [r for r in CONFIG.records if r.rtype == "A"]
     assert checks.records(real_querier(SELECTEL["b.ns.selectel.ru"]), CONFIG, sets) == [
         Result("records @ A", Status.UNKNOWN, "77.223.114.2: unreachable")]
+
+
+def hostile_transport(query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
+    """Answers with a TXT value and an NSID that try to start new message lines."""
+    question = query.question[0]
+    rtype = dns.rdatatype.to_text(question.rdtype)
+    if rtype == "TXT":
+        data = r'"v=spf1 -all\010::warning::pwned\013\226\128\168"'
+    else:
+        serial = 2026111001 if address == SELECTEL["a.ns.selectel.ru"] else 2026111002
+        data = f"a.ns.selectel.ru. support.selectel.ru. {serial} 10800 3600 604800 60"
+    response = dns.message.make_response(query)
+    response.flags |= dns.flags.AA
+    response.answer.append(dns.rrset.from_text(question.name, 300, "IN", rtype, data))
+    response.use_edns(0, options=[dns.edns.NSIDOption(b"evil\n::error::x\r")])
+    return dns.message.from_wire(response.to_wire())
+
+
+def test_hostile_dns_text_never_starts_a_new_message_line() -> None:
+    addresses = {name: [address] for name, address in SELECTEL.items()}
+    querier = Querier(transport=hostile_transport, resolve=lambda name, rdtype: addresses[name], sleep=lambda s: None)
+    txt = [r for r in CONFIG.records if r.rtype == "TXT"]
+    results = [checks.soa(querier, CONFIG), *checks.records(querier, CONFIG, txt)]
+    assert [r.status for r in results] == [Status.FAIL, Status.FAIL]
+
+    lines = change_lines([Change(Status.OK, NOW, r) for r in results], NOW)
+    text = "\n".join(lines)
+    assert len(text.splitlines()) == len(lines) == 2
+    assert not any(line.lstrip().startswith("::") for line in text.splitlines())
+    assert "[evil\\n::error::x\\r]" in text
+    assert '"v=spf1 -all\\n::warning::pwned\\r\\u2028"' in text
 
 
 # expiry

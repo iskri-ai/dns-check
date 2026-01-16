@@ -197,10 +197,22 @@ class Querier:
         return Unusable(reason, no_response=True)
 
 
+def printable(text: str) -> str:
+    """Escape backslashes and every non-printable character in DNS data.
+
+    Text from a server can then never start a new line in the job log or
+    in a Telegram message. Use it for display only, never for comparison.
+    """
+    return "".join(
+        "\\\\" if char == "\\" else char if char.isprintable() else char.encode("unicode_escape").decode()
+        for char in text
+    )
+
+
 def _nsid(response: dns.message.Message) -> str:
     for option in response.options:
         if isinstance(option, dns.edns.NSIDOption):
-            return option.nsid.decode("ascii", errors="replace") or "-"
+            return printable(option.nsid.decode("ascii", errors="replace")) or "-"
     return "-"
 
 
