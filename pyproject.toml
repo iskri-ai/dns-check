@@ -18,15 +18,13 @@ dev = [
 ]
 
 [tool.uv]
-# The checker runs as `python -m dnscheck` from the repo root, so the
-# project itself is never built or installed.
 package = false
+required-version = "==0.13.5"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-# No test may reach the network.
-addopts = "--disable-socket --strict-markers"
+addopts = "--disable-socket --strict-markers" # no network in tests
 
 [tool.mypy]
 strict = true
