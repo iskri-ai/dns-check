@@ -9,7 +9,7 @@ import dns.rcode
 import dns.resolver
 import dns.rrset
 
-from dnscheck.config import record_value
+from dnscheck.config import RecordValue, record_value
 from dnscheck.query import (
     PAUSE,
     TIMEOUT,
@@ -24,12 +24,12 @@ from dnscheck.query import (
 QNAME = dns.name.from_text("iskri.io.")
 WWW = dns.name.from_text("www.iskri.io.")
 
-type Outcome = BaseException | Callable[[dns.message.Message], dns.message.Message]
+type Outcome = type[BaseException] | BaseException | Callable[[dns.message.Message], dns.message.Message]
 
 
 def respond(
     *,
-    rcode: int = dns.rcode.NOERROR,
+    rcode: dns.rcode.Rcode = dns.rcode.NOERROR,
     aa: bool = True,
     tc: bool = False,
     answer: tuple[tuple[str, str, str], ...] = (),
@@ -63,7 +63,7 @@ class FakeTransport:
     def __call__(self, query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
         self.calls.append((query, address, timeout))
         outcome = self.outcomes.pop(0)
-        if isinstance(outcome, BaseException):
+        if isinstance(outcome, type) or isinstance(outcome, BaseException):
             raise outcome
         return outcome(query)
 
@@ -74,7 +74,7 @@ def querier(*outcomes: Outcome) -> tuple[Querier, FakeTransport, list[float]]:
     return Querier(transport=transport, resolve=lambda n, t: [], sleep=sleeps.append), transport, sleeps
 
 
-def a_record(text: str) -> object:
+def a_record(text: str) -> RecordValue:
     return record_value(respond(answer=(("iskri.io.", "A", text),))(dns.message.make_query(QNAME, "A")).answer[0][0])
 
 
@@ -138,7 +138,7 @@ def test_a_final_response_that_is_still_truncated_is_unusable() -> None:
 
 def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
     q, transport, sleeps = querier(
-        dns.exception.Timeout(), dns.exception.Timeout(), respond(answer=(("iskri.io.", "A", "203.0.113.10"),))
+        dns.exception.Timeout, dns.exception.Timeout, respond(answer=(("iskri.io.", "A", "203.0.113.10"),))
     )
     assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
     assert len(transport.calls) == 3
@@ -147,7 +147,7 @@ def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
 
 def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
     q, transport, _ = querier(
-        dns.exception.Timeout(), dns.exception.Timeout(), dns.exception.Timeout(),
+        dns.exception.Timeout, dns.exception.Timeout, dns.exception.Timeout,
         respond(answer=(("iskri.io.", "A", "203.0.113.10"),)),
     )
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE)
@@ -194,7 +194,7 @@ def test_lookups_are_cached_per_pass_and_failures_give_none() -> None:
     def resolve(name: str, rdtype: str) -> list[str]:
         calls.append((name, rdtype))
         if name == "missing.example":
-            raise dns.resolver.NXDOMAIN()
+            raise dns.resolver.NXDOMAIN
         return [] if name == "empty.example" else ["188.68.203.1"]
 
     q = Querier(transport=FakeTransport(), resolve=resolve, sleep=lambda s: None)

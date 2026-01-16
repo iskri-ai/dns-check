@@ -39,7 +39,8 @@ def rdata(rtype: str, text: str) -> dns.rdata.Rdata:
     query = dns.message.make_query("iskri.io.", rtype)
     response = dns.message.make_response(query)
     response.answer.append(dns.rrset.from_text("iskri.io.", 300, "IN", rtype, text))
-    return dns.message.from_wire(response.to_wire()).answer[0][0]
+    record: dns.rdata.Rdata = dns.message.from_wire(response.to_wire()).answer[0][0]
+    return record
 
 
 def test_loads_a_valid_config() -> None:

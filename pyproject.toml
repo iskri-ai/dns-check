@@ -28,4 +28,4 @@ addopts = "--disable-socket --strict-markers" # no network in tests
 
 [tool.mypy]
 strict = true
-files = ["dnscheck"]
+files = ["dnscheck", "tests"]
