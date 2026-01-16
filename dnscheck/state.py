@@ -32,6 +32,20 @@ CREDENTIAL_HELPER = (
     '!f() { test "$1" = get || exit 0; echo username=x-access-token;'
     ' echo "password=$GITHUB_TOKEN"; }; f'
 )
+CREDENTIAL_URL = "https://github.com"
+
+
+def credential_args() -> list[str]:
+    """Git options that offer the token only to https://github.com.
+
+    The empty helper first clears every configured helper. The helper is
+    then registered for the GitHub URL only, so a push to any other host
+    or protocol gets no credentials.
+    """
+    return [
+        "-c", "credential.helper=",
+        "-c", f"credential.{CREDENTIAL_URL}.helper={CREDENTIAL_HELPER}",
+    ]
 BOT = "github-actions[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -99,14 +113,7 @@ class Store:
             "commit-tree",
             ["commit-tree", "--no-gpg-sign", tree, "-p", self._parent, "-m", COMMIT_MESSAGE],
         )
-        self._git(
-            "push",
-            [
-                "-c", "credential.helper=",
-                "-c", f"credential.helper={CREDENTIAL_HELPER}",
-                "push", self._remote, f"{commit}:refs/heads/{BRANCH}",
-            ],
-        )
+        self._git("push", [*credential_args(), "push", self._remote, f"{commit}:refs/heads/{BRANCH}"])
         self._parent = commit
 
     def _git(self, what: str, args: list[str], stdin: bytes | None = None) -> str:

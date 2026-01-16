@@ -1,4 +1,5 @@
 import datetime
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -6,7 +7,7 @@ from typing import Any
 import pytest
 
 from dnscheck.checks import Status
-from dnscheck.state import BOT, COMMIT_MESSAGE, Entry, StateError, Store, dump, parse
+from dnscheck.state import BOT, COMMIT_MESSAGE, Entry, StateError, Store, credential_args, dump, parse
 
 T0 = datetime.datetime(2026, 11, 11, 12, 7, tzinfo=datetime.UTC)
 
@@ -85,10 +86,35 @@ def test_push_uses_the_credential_helper_and_never_the_token(
     store.write({"soa": Entry(Status.OK, T0)})
 
     push = next(c for c in commands if "push" in c)
-    assert push[1:3] == ["-c", "credential.helper="]
-    assert push[3:5] == ["-c", push[4]] and push[4].startswith("credential.helper=!f()")
-    assert "$GITHUB_TOKEN" in push[4]
+    assert push[1:5] == credential_args()
     assert all("ghs_secret_token_value" not in part for command in commands for part in command)
+
+
+def credential(action: str, protocol: str, host: str, token: str = "fake-token") -> subprocess.CompletedProcess[bytes]:
+    env = {**os.environ, "GITHUB_TOKEN": token, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "SSH_ASKPASS": ""}
+    return subprocess.run(
+        ["git", *credential_args(), "credential", action],
+        input=f"protocol={protocol}\nhost={host}\n\n".encode(),
+        capture_output=True, env=env, check=False,
+    )
+
+
+def test_the_helper_offers_the_token_to_github_over_https_only() -> None:
+    granted = credential("fill", "https", "github.com")
+    assert granted.returncode == 0
+    assert b"username=x-access-token\n" in granted.stdout
+    assert b"password=fake-token\n" in granted.stdout
+    for protocol, host in [("https", "unrelated.example"), ("http", "github.com"), ("https", "github.com.evil.example")]:
+        denied = credential("fill", protocol, host)
+        assert b"fake-token" not in denied.stdout + denied.stderr, (protocol, host)
+        assert denied.returncode != 0, (protocol, host)
+
+
+def test_the_helper_ignores_store_and_erase() -> None:
+    for action in ("approve", "reject"):
+        result = credential(action, "https", "github.com")
+        assert result.returncode == 0
+        assert result.stdout == b""
 
 
 def test_git_errors_carry_only_our_wording(repos: tuple[Path, Path], capsys: pytest.CaptureFixture[str]) -> None:
