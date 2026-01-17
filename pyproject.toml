@@ -19,7 +19,6 @@ dev = [
 
 [tool.uv]
 package = false
-required-version = "==0.13.5"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
