@@ -32,7 +32,7 @@ from dnscheck.notify import (
     heartbeat_lines,
 )
 from dnscheck.query import Querier
-from dnscheck.state import SETUP_HINT, Entry, State, StateError, Store
+from dnscheck.state import SETUP_HINT, Entry, State, StateError, StateMissing, Store
 
 RECHECK_DELAY = 120.0
 HEARTBEAT_CRON = "17 4 * * *"
@@ -126,8 +126,10 @@ def _check(
     store = deps.store(repo)
     try:
         state = store.read()
-    except StateError as exc:
+    except StateMissing as exc:
         raise Aborted(f"{exc}. To {SETUP_HINT}") from exc
+    except StateError as exc:
+        raise Aborted(str(exc)) from exc
 
     results = _run_checks(config, deps)
     now = deps.now()

@@ -9,7 +9,7 @@ from dnscheck import checks, main
 from dnscheck.checks import Result, Status
 from dnscheck.main import Deps, diff, run
 from dnscheck.notify import TelegramError
-from dnscheck.state import Entry, StateError
+from dnscheck.state import Entry, StateError, StateMissing
 
 NOW = datetime.datetime(2026, 11, 12, 13, 19, tzinfo=datetime.UTC)
 ENV = {
@@ -34,7 +34,7 @@ KEYS = ["delegation", "soa", "expiry", "records @ TXT"]
 
 
 class FakeStore:
-    def __init__(self, state: dict[str, Entry] | None = None, fail_read: bool = False, fail_write: bool = False) -> None:
+    def __init__(self, state: dict[str, Entry] | None = None, fail_read: StateError | None = None, fail_write: bool = False) -> None:
         self.state = dict(state or {})
         self.fail_read = fail_read
         self.fail_write = fail_write
@@ -42,7 +42,7 @@ class FakeStore:
 
     def read(self) -> dict[str, Entry]:
         if self.fail_read:
-            raise StateError("git fetch on the state branch failed (exit 128)")
+            raise self.fail_read
         return dict(self.state)
 
     def write(self, state: dict[str, Entry]) -> None:
@@ -254,12 +254,19 @@ def test_reported_stays_unset_when_the_abort_message_fails_too(harness: Any) -> 
     assert h.output.read_text() == ""
 
 
-def test_an_unreadable_state_aborts_with_the_setup_hint(harness: Any) -> None:
+def test_a_missing_state_branch_aborts_with_the_setup_hint(harness: Any) -> None:
     h = harness()
-    h.store.fail_read = True
+    h.store.fail_read = StateMissing("the state branch does not exist on the remote")
     assert h.run() == 1
     text = h.messenger.sent[0]
-    assert text.startswith("iskri.io: run aborted: git fetch on the state branch failed (exit 128). To create the state branch once: git switch --orphan state")
+    assert text.startswith("iskri.io: run aborted: the state branch does not exist on the remote. To create the state branch once: git switch --orphan state")
+
+
+def test_other_state_errors_abort_without_the_setup_hint(harness: Any) -> None:
+    h = harness()
+    h.store.fail_read = StateError("git fetch on the state branch failed (exit 128)")
+    assert h.run() == 1
+    assert h.messenger.sent == [f"iskri.io: run aborted: git fetch on the state branch failed (exit 128)\n{RUN}"]
     assert h.output.read_text() == "reported=true\n"
 
 

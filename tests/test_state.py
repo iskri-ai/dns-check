@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from dnscheck.checks import Status
-from dnscheck.state import BOT, COMMIT_MESSAGE, Entry, StateError, Store, credential_args, dump, parse
+from dnscheck.state import BOT, COMMIT_MESSAGE, Entry, StateError, StateMissing, Store, credential_args, dump, parse
 
 T0 = datetime.datetime(2026, 11, 11, 12, 7, tzinfo=datetime.UTC)
 
@@ -63,11 +63,40 @@ def test_read_write_round_trip(repos: tuple[Path, Path]) -> None:
     assert git(work, "branch", "--show-current") == "master"
 
 
-def test_a_missing_branch_aborts(tmp_path: Path, repos: tuple[Path, Path]) -> None:
+def test_a_missing_branch_is_reported_as_missing(repos: tuple[Path, Path]) -> None:
     origin, work = repos
     git(origin, "branch", "-D", "state")
-    with pytest.raises(StateError, match="git fetch on the state branch failed"):
+    with pytest.raises(StateMissing, match="the state branch does not exist on the remote"):
         Store(work).read()
+
+
+def replace_state(origin: Path, tmp_path: Path, files: dict[str, str]) -> None:
+    clone = tmp_path / "replace"
+    subprocess.run(["git", "clone", "-q", "--branch", "state", str(origin), str(clone)], check=True)
+    git(clone, "rm", "-q", "-r", ".")
+    for name, text in files.items():
+        (clone / name).write_text(text)
+        git(clone, "add", name)
+    git(clone, "commit", "-q", "-m", "replace state")
+    git(clone, "push", "-q", "origin", "state")
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["unreachable remote", "no state.json", "invalid JSON"],
+)
+def test_other_read_failures_are_not_reported_as_missing(case: str, tmp_path: Path, repos: tuple[Path, Path]) -> None:
+    origin, work = repos
+    store = Store(work)
+    if case == "unreachable remote":
+        store = Store(work, remote=str(tmp_path / "gone.git"))
+    elif case == "no state.json":
+        replace_state(origin, tmp_path, {"other.txt": "x\n"})
+    else:
+        replace_state(origin, tmp_path, {"state.json": "not json\n"})
+    with pytest.raises(StateError) as excinfo:
+        store.read()
+    assert not isinstance(excinfo.value, StateMissing)
 
 
 def test_push_uses_the_credential_helper_and_never_the_token(

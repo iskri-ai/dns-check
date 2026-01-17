@@ -56,6 +56,10 @@ class StateError(Exception):
     """The state could not be read or written. The message is our own wording only."""
 
 
+class StateMissing(StateError):
+    """The state branch does not exist on the remote."""
+
+
 @dataclasses.dataclass(frozen=True)
 class Entry:
     status: Status
@@ -100,7 +104,12 @@ class Store:
         self._parent: str | None = None
 
     def read(self) -> State:
-        self._git("fetch", ["fetch", "--no-tags", "--depth=1", self._remote, f"refs/heads/{BRANCH}"])
+        try:
+            self._git("fetch", ["fetch", "--no-tags", "--depth=1", self._remote, f"refs/heads/{BRANCH}"])
+        except StateError:
+            if self._branch_missing():
+                raise StateMissing(f"the {BRANCH} branch does not exist on the remote") from None
+            raise
         self._parent = self._git("rev-parse", ["rev-parse", "FETCH_HEAD"])
         return parse(self._git("show", ["show", f"{self._parent}:{FILE}"]))
 
@@ -116,7 +125,20 @@ class Store:
         self._git("push", [*credential_args(), "push", self._remote, f"{commit}:refs/heads/{BRANCH}"])
         self._parent = commit
 
+    def _branch_missing(self) -> bool:
+        """Only the documented "no matching refs" exit code of ls-remote counts as missing."""
+        result = self._run_git(["ls-remote", "--exit-code", "--heads", self._remote, f"refs/heads/{BRANCH}"])
+        return result.returncode == 2
+
     def _git(self, what: str, args: list[str], stdin: bytes | None = None) -> str:
+        result = self._run_git(args, stdin)
+        if result.returncode != 0:
+            # keep raw git errors out of Telegram
+            sys.stderr.write(result.stderr.decode(errors="replace"))
+            raise StateError(f"git {what} on the {BRANCH} branch failed (exit {result.returncode})")
+        return result.stdout.decode().strip()
+
+    def _run_git(self, args: list[str], stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
         env: dict[str, Any] = {
             **os.environ,
             "GIT_TERMINAL_PROMPT": "0",
@@ -125,11 +147,6 @@ class Store:
             "GIT_COMMITTER_NAME": BOT,
             "GIT_COMMITTER_EMAIL": BOT_EMAIL,
         }
-        result = self._run(
+        return self._run(
             ["git", *args], cwd=self._repo, input=stdin, capture_output=True, env=env, check=False
         )
-        if result.returncode != 0:
-            # keep raw git errors out of Telegram
-            sys.stderr.write(result.stderr.decode(errors="replace"))
-            raise StateError(f"git {what} on the {BRANCH} branch failed (exit {result.returncode})")
-        return result.stdout.decode().strip()
