@@ -78,16 +78,10 @@ def parse(text: str) -> State:
         raise StateError(f"{FILE} is not a JSON object")
     state: State = {}
     for key, entry in data.items():
-        if not isinstance(entry, dict) or set(entry) != {"status", "since"}:
-            raise StateError(f"{FILE}: invalid entry {key!r}")
         try:
-            status = Status(entry["status"])
-            since = datetime.datetime.fromisoformat(entry["since"])
-        except (ValueError, TypeError) as exc:
+            state[key] = Entry(Status(entry["status"]), datetime.datetime.fromisoformat(entry["since"]))
+        except (ValueError, TypeError, KeyError) as exc:
             raise StateError(f"{FILE}: invalid entry {key!r}") from exc
-        if since.tzinfo is None:
-            raise StateError(f"{FILE}: invalid entry {key!r}")
-        state[key] = Entry(status, since)
     return state
 
 

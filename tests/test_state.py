@@ -163,12 +163,12 @@ def test_git_errors_carry_only_our_wording(repos: tuple[Path, Path], capsys: pyt
     [
         "not json",
         "[]",
+        "null",
+        '{"soa": null}',
         '{"soa": "ok"}',
         '{"soa": {"status": "ok"}}',
         '{"soa": {"status": "great", "since": "2026-11-11T12:07:00+00:00"}}',
         '{"soa": {"status": "ok", "since": "yesterday"}}',
-        '{"soa": {"status": "ok", "since": "2026-11-11T12:07:00"}}',
-        '{"soa": {"status": "ok", "since": "2026-11-11T12:07:00+00:00", "detail": "x"}}',
     ],
 )
 def test_invalid_state_aborts(text: str) -> None:
