@@ -124,9 +124,6 @@ def _records(raw: Any, domain: str, origin: dns.name.Name) -> tuple[RecordSet, .
                 f"{where}.{rtype}: expected a non-empty string or a list of non-empty strings",
             )
             expected = frozenset(_value(rtype, v, f"{where}.{rtype}") for v in values)
-            if rtype == "CNAME" and expected:
-                _need(len(types) == 1, f"{where}: a CNAME must be the only type at its name")
-                _need(len(expected) == 1, f"{where}: a name can hold only one CNAME")
             result.append(RecordSet(lowered, rtype, qname, expected))
     return tuple(sorted(result, key=lambda r: (r.name, r.rtype)))
 

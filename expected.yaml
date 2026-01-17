@@ -3,7 +3,8 @@
 # Record names are relative to the domain, and "@" stands for the apex.
 # Each listed type must match exactly, and [] means the type must not
 # exist. Names and types that aren't listed are not checked. The supported
-# types are A, AAAA, CNAME, MX, TXT and CAA. Always quote TXT values.
+# types are A, AAAA, CNAME, MX, TXT and CAA. A name with a CNAME lists no
+# other types. Always quote TXT values.
 domain: iskri.io
 nameservers:
   - a.ns.selectel.ru

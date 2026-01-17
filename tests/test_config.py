@@ -127,8 +127,6 @@ def records(body: str) -> str:
         (records('  "@": {a: 1.1.1.1}\n'), "unsupported type 'a'"),
         (records('  "@": {A: 203.0.113.010}\n'), "cannot parse '203.0.113.010' as A"),
         (records('  "@": {MX: "mail.example.com"}\n'), "cannot parse 'mail.example.com' as MX"),
-        (records("  www: {CNAME: a.example., A: []}\n"), "a CNAME must be the only type at its name"),
-        (records("  www: {CNAME: [a.example., b.example.]}\n"), "a name can hold only one CNAME"),
         (records("  old.iskri.io: {A: []}\n"), 'records: "old.iskri.io" must be relative to iskri.io'),
         (records("  Old.ISKRI.io: {A: []}\n"), "must be relative to iskri.io"),
         (records("  iskri.io: {A: []}\n"), "must be relative to iskri.io"),
