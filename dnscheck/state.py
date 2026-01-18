@@ -11,8 +11,6 @@ from pathlib import Path
 
 from dnscheck.checks import Status
 
-FILE = "state.json"
-
 
 class StateError(Exception):
     """The state could not be read or written. The message is our own wording only."""
@@ -31,15 +29,15 @@ def parse(text: str) -> State:
     try:
         data = json.loads(text)
     except ValueError as exc:
-        raise StateError(f"{FILE} is not valid JSON") from exc
+        raise StateError("the state file is not valid JSON") from exc
     if not isinstance(data, dict):
-        raise StateError(f"{FILE} is not a JSON object")
+        raise StateError("the state file is not a JSON object")
     state: State = {}
     for key, entry in data.items():
         try:
             state[key] = Entry(Status(entry["status"]), datetime.datetime.fromisoformat(entry["since"]))
         except (ValueError, TypeError, KeyError) as exc:
-            raise StateError(f"{FILE}: invalid entry {key!r}") from exc
+            raise StateError(f"the state file has an invalid entry {key!r}") from exc
     return state
 
 
