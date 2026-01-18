@@ -1,9 +1,10 @@
 """One run of the monitor.
 
 The run loads expected.yaml, reads the state, checks, re-checks unknown
-results after 2 minutes, sends one message and saves the state. It exits
-0 whatever the domain's status, and 1 only when it could not finish its
-work (aborted). An aborted run tries to send its reason to Telegram.
+results after 2 minutes, sends one message and writes the state file.
+It exits 0 whatever the domain's status, and 1 only when it could not
+finish its work (aborted). An aborted run tries to send its reason to
+Telegram.
 """
 
 import argparse
@@ -32,7 +33,7 @@ from dnscheck.notify import (
     heartbeat_lines,
 )
 from dnscheck.query import Querier
-from dnscheck.state import SETUP_HINT, Entry, State, StateError, StateMissing, Store
+from dnscheck.state import Entry, State, StateError, Store
 
 RECHECK_DELAY = 120.0
 HEARTBEAT_CRON = "17 4 * * *"
@@ -74,12 +75,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dnscheck")
     parser.add_argument("--heartbeat", action="store_true", help="also send the daily summary")
     parser.add_argument("--config", type=Path, default=Path("expected.yaml"))
+    parser.add_argument("--state", type=Path, required=True, help="the state.json to read and update")
     args = parser.parse_args(argv)
-    return run(args.config, Path.cwd(), args.heartbeat, os.environ)
+    return run(args.config, args.state, Path.cwd(), args.heartbeat, os.environ)
 
 
 def run(
-    config_path: Path, repo: Path, heartbeat: bool, env: Mapping[str, str], deps: Deps | None = None
+    config_path: Path,
+    state_path: Path,
+    repo: Path,
+    heartbeat: bool,
+    env: Mapping[str, str],
+    deps: Deps | None = None,
 ) -> int:
     deps = deps or Deps()
     run_url = _run_url(env)
@@ -94,7 +101,7 @@ def run(
     try:
         config = _load(config_path)
         domain = config.domain
-        _check(config, repo, heartbeat, run_url, messenger, deps)
+        _check(config, state_path, repo, heartbeat, run_url, messenger, deps)
         return 0
     except Aborted as exc:
         reason = str(exc)
@@ -121,13 +128,17 @@ def _load(path: Path) -> Config:
 
 
 def _check(
-    config: Config, repo: Path, heartbeat: bool, run_url: str, messenger: Messenger, deps: Deps
+    config: Config,
+    state_path: Path,
+    repo: Path,
+    heartbeat: bool,
+    run_url: str,
+    messenger: Messenger,
+    deps: Deps,
 ) -> None:
-    store = deps.store(repo)
+    store = deps.store(state_path)
     try:
         state = store.read()
-    except StateMissing as exc:
-        raise Aborted(f"{exc}. To {SETUP_HINT}") from exc
     except StateError as exc:
         raise Aborted(str(exc)) from exc
 
