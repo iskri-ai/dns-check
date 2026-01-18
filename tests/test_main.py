@@ -120,7 +120,14 @@ class Harness:
             commit_time=self.commit_time,
         )
         env = {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}
-        code = run(self.config, self.state_path, self.config.parent, heartbeat, env, deps)
+        code = run(
+            config_path=self.config,
+            state_path=self.state_path,
+            repo=self.config.parent,
+            heartbeat=heartbeat,
+            env=env,
+            deps=deps,
+        )
         assert not self.passes, f"unused scripted passes: {self.passes}"
         return code
 

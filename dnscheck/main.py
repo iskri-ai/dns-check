@@ -77,10 +77,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path, default=Path("expected.yaml"))
     parser.add_argument("--state", type=Path, required=True, help="the state.json to read and update")
     args = parser.parse_args(argv)
-    return run(args.config, args.state, Path.cwd(), args.heartbeat, os.environ)
+    return run(
+        config_path=args.config,
+        state_path=args.state,
+        repo=Path.cwd(),
+        heartbeat=args.heartbeat,
+        env=os.environ,
+    )
 
 
 def run(
+    *,
     config_path: Path,
     state_path: Path,
     repo: Path,
@@ -101,7 +108,15 @@ def run(
     try:
         config = _load(config_path)
         domain = config.domain
-        _check(config, state_path, repo, heartbeat, run_url, messenger, deps)
+        _check(
+            config,
+            state_path=state_path,
+            repo=repo,
+            heartbeat=heartbeat,
+            run_url=run_url,
+            messenger=messenger,
+            deps=deps,
+        )
         return 0
     except Aborted as exc:
         reason = str(exc)
@@ -129,6 +144,7 @@ def _load(path: Path) -> Config:
 
 def _check(
     config: Config,
+    *,
     state_path: Path,
     repo: Path,
     heartbeat: bool,
