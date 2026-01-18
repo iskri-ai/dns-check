@@ -50,6 +50,7 @@ def test_a_failed_write_aborts_with_our_wording(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "text",
     [
+        "",
         "not json",
         "[]",
         "null",
