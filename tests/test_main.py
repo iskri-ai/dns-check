@@ -1,4 +1,5 @@
 import datetime
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -308,6 +309,32 @@ def test_empty_telegram_values_abort_before_anything_else(harness: Any) -> None:
     h = harness()
     assert h.run(env={"TELEGRAM_THREAD_ID": ""}) == 1
     assert h.messenger.attempts == 0
+
+
+def test_main_passes_the_options_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 1
+
+    monkeypatch.setattr(main, "run", fake_run)
+    assert main.main(["--state", "some/state.json"]) == 1
+    assert calls == [
+        {
+            "config_path": Path("expected.yaml"),
+            "state_path": Path("some/state.json"),
+            "repo": Path.cwd(),
+            "heartbeat": False,
+            "env": os.environ,
+        }
+    ]
+
+
+def test_main_requires_the_state_option() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main.main([])
+    assert excinfo.value.code == 2
 
 
 def test_diff_treats_new_keys_as_previously_ok_and_drops_removed_ones() -> None:
