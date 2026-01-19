@@ -11,7 +11,7 @@ import dns.rrset
 
 from dnscheck.config import RecordValue, record_value
 from dnscheck.query import (
-    PAUSE,
+    QUERY_PAUSE,
     TIMEOUT,
     UNREACHABLE,
     NotDelegated,
@@ -165,7 +165,7 @@ def test_a_final_response_that_is_still_truncated_is_unusable() -> None:
     assert q.referral("192.0.2.1", QNAME) == Unusable("truncated response", "5-ans-prod-spb")
 
 
-def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
+def test_timeouts_are_retried_and_every_try_is_paced() -> None:
     q, transport, sleeps = querier(
         dns.exception.Timeout,
         dns.exception.Timeout,
@@ -173,11 +173,17 @@ def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
     )
     assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
     assert len(transport.calls) == 3
-    assert sleeps == [PAUSE] * 3
+    assert sleeps == [QUERY_PAUSE] * 3
+
+
+def test_a_successful_query_is_paced_too() -> None:
+    q, _, sleeps = querier(respond())
+    assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
+    assert sleeps == [QUERY_PAUSE]
 
 
 def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
-    q, transport, _ = querier(
+    q, transport, sleeps = querier(
         dns.exception.Timeout,
         dns.exception.Timeout,
         dns.exception.Timeout,
@@ -186,6 +192,7 @@ def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE, no_response=True)
     assert q.authoritative("192.0.2.1", QNAME, "SOA") == Unusable(UNREACHABLE, no_response=True)
     assert len(transport.calls) == 3
+    assert sleeps == [QUERY_PAUSE] * 3
     assert isinstance(q.authoritative("192.0.2.2", QNAME, "A"), Records)
 
 

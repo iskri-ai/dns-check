@@ -25,7 +25,14 @@ from dnscheck.config import RecordValue, record_value
 
 TRIES = 3
 TIMEOUT = 5.0
-PAUSE = 0.25
+QUERY_PAUSE = 0.25
+"""Pause after every query sent, retries included.
+
+On 2026-11-11 the Selectel servers answered REFUSED to some queries sent
+in bursts from a Mac, and the cause was not found. With this pause, 96
+queries from the same Mac and a probe from GitHub runners got no REFUSED.
+Bursts were never tested from a runner.
+"""
 LOOKUP_LIFETIME = TRIES * TIMEOUT
 UNREACHABLE = "unreachable"
 
@@ -186,8 +193,9 @@ class Querier:
             # dnspython raises a plain EOFError when a server closes TCP mid-answer
             except (dns.exception.DNSException, OSError, EOFError) as exc:
                 reason = f"transport error: {type(exc).__name__}"
+            # pace every query, see QUERY_PAUSE
             finally:
-                self._sleep(PAUSE)
+                self._sleep(QUERY_PAUSE)
         if timeouts == TRIES:
             self._dead.add(address)
         return Unusable(reason, no_response=True)
