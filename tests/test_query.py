@@ -25,7 +25,9 @@ from dnscheck.query import (
 QNAME = dns.name.from_text("iskri.io.")
 WWW = dns.name.from_text("www.iskri.io.")
 
-type Outcome = type[BaseException] | BaseException | Callable[[dns.message.Message], dns.message.Message]
+type Outcome = (
+    type[BaseException] | BaseException | Callable[[dns.message.Message], dns.message.Message]
+)
 
 
 def respond(
@@ -49,7 +51,9 @@ def respond(
         for owner, rtype, data in answer:
             response.answer.append(dns.rrset.from_text(owner, 300, "IN", rtype, *data.split("|")))
         for owner, rtype, data in authority:
-            response.authority.append(dns.rrset.from_text(owner, 300, "IN", rtype, *data.split("|")))
+            response.authority.append(
+                dns.rrset.from_text(owner, 300, "IN", rtype, *data.split("|"))
+            )
         response.use_edns(0, options=[dns.edns.NSIDOption(nsid)] if nsid else [])
         return dns.message.from_wire(response.to_wire())
 
@@ -61,7 +65,9 @@ class FakeTransport:
         self.outcomes = list(outcomes)
         self.calls: list[tuple[dns.message.Message, str, float]] = []
 
-    def __call__(self, query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
+    def __call__(
+        self, query: dns.message.Message, address: str, timeout: float
+    ) -> dns.message.Message:
         self.calls.append((query, address, timeout))
         outcome = self.outcomes.pop(0)
         if isinstance(outcome, (type, BaseException)):
@@ -72,11 +78,17 @@ class FakeTransport:
 def querier(*outcomes: Outcome) -> tuple[Querier, FakeTransport, list[float]]:
     transport = FakeTransport(*outcomes)
     sleeps: list[float] = []
-    return Querier(transport=transport, resolve=lambda n, t: [], sleep=sleeps.append), transport, sleeps
+    return (
+        Querier(transport=transport, resolve=lambda n, t: [], sleep=sleeps.append),
+        transport,
+        sleeps,
+    )
 
 
 def a_record(text: str) -> RecordValue:
-    return record_value(respond(answer=(("iskri.io.", "A", text),))(dns.message.make_query(QNAME, "A")).answer[0][0])
+    return record_value(
+        respond(answer=(("iskri.io.", "A", text),))(dns.message.make_query(QNAME, "A")).answer[0][0]
+    )
 
 
 def test_query_has_rd_cleared_edns_with_nsid_and_no_do() -> None:
@@ -94,12 +106,16 @@ def test_query_has_rd_cleared_edns_with_nsid_and_no_do() -> None:
 def test_matching_answer_gives_the_record_set_and_nsid() -> None:
     q, _, _ = querier(respond(answer=(("iskri.io.", "A", "203.0.113.10|198.51.100.7"),)))
     result = q.authoritative("192.0.2.1", QNAME, "A")
-    assert result == Records(frozenset({a_record("203.0.113.10"), a_record("198.51.100.7")}), "5-ans-prod-spb")
+    assert result == Records(
+        frozenset({a_record("203.0.113.10"), a_record("198.51.100.7")}), "5-ans-prod-spb"
+    )
 
 
 def test_txt_strings_are_joined() -> None:
     q, _, _ = querier(respond(answer=(("iskri.io.", "TXT", '"v=DKIM1; p=MIGf" "MA0GCSq"'),)))
-    assert q.authoritative("192.0.2.1", QNAME, "TXT") == Records(frozenset({b"v=DKIM1; p=MIGfMA0GCSq"}), "5-ans-prod-spb")
+    assert q.authoritative("192.0.2.1", QNAME, "TXT") == Records(
+        frozenset({b"v=DKIM1; p=MIGfMA0GCSq"}), "5-ans-prod-spb"
+    )
 
 
 def test_nodata_and_nxdomain_with_aa_mean_no_records() -> None:
@@ -120,9 +136,19 @@ def test_unusable_responses() -> None:
         (respond(rcode=dns.rcode.SERVFAIL), QNAME, "A", "SERVFAIL"),
         (respond(aa=False), QNAME, "A", "no AA flag"),
         (respond(rcode=dns.rcode.NXDOMAIN, aa=False), WWW, "A", "no AA flag"),
-        (respond(answer=cname), WWW, "A", "unexpected answer: www.iskri.io. 300 IN CNAME target.example.net."),
+        (
+            respond(answer=cname),
+            WWW,
+            "A",
+            "unexpected answer: www.iskri.io. 300 IN CNAME target.example.net.",
+        ),
         (respond(rcode=dns.rcode.NXDOMAIN, answer=cname), WWW, "A", "unexpected answer"),
-        (respond(answer=(("other.iskri.io.", "A", "203.0.113.10"),)), WWW, "A", "unexpected answer"),
+        (
+            respond(answer=(("other.iskri.io.", "A", "203.0.113.10"),)),
+            WWW,
+            "A",
+            "unexpected answer",
+        ),
     ]
     for outcome, qname, rtype, reason in cases:
         q, _, _ = querier(outcome)
@@ -133,13 +159,17 @@ def test_unusable_responses() -> None:
 
 def test_a_final_response_that_is_still_truncated_is_unusable() -> None:
     q, _, _ = querier(respond(tc=True), respond(aa=False, tc=True))
-    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Unusable("truncated response", "5-ans-prod-spb")
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Unusable(
+        "truncated response", "5-ans-prod-spb"
+    )
     assert q.referral("192.0.2.1", QNAME) == Unusable("truncated response", "5-ans-prod-spb")
 
 
 def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
     q, transport, sleeps = querier(
-        dns.exception.Timeout, dns.exception.Timeout, respond(answer=(("iskri.io.", "A", "203.0.113.10"),))
+        dns.exception.Timeout,
+        dns.exception.Timeout,
+        respond(answer=(("iskri.io.", "A", "203.0.113.10"),)),
     )
     assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
     assert len(transport.calls) == 3
@@ -148,7 +178,9 @@ def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
 
 def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
     q, transport, _ = querier(
-        dns.exception.Timeout, dns.exception.Timeout, dns.exception.Timeout,
+        dns.exception.Timeout,
+        dns.exception.Timeout,
+        dns.exception.Timeout,
         respond(answer=(("iskri.io.", "A", "203.0.113.10"),)),
     )
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE, no_response=True)
@@ -160,7 +192,9 @@ def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
 def test_refused_and_transport_errors_do_not_mark_the_address_dead() -> None:
     q, transport, _ = querier(
         respond(rcode=dns.rcode.REFUSED, aa=False),
-        ConnectionRefusedError(), ConnectionRefusedError(), ConnectionRefusedError(),
+        ConnectionRefusedError(),
+        ConnectionRefusedError(),
+        ConnectionRefusedError(),
         respond(),
     )
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("REFUSED", "5-ans-prod-spb")
@@ -201,7 +235,9 @@ def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
 
 def test_a_tcp_answer_cut_off_mid_read_counts_as_no_response() -> None:
     q, transport, _ = querier(EOFError, EOFError, EOFError, respond())
-    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("transport error: EOFError", no_response=True)
+    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(
+        "transport error: EOFError", no_response=True
+    )
     assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans-prod-spb")
     assert len(transport.calls) == 4
 
@@ -215,7 +251,9 @@ def test_printable_escapes_backslashes_and_everything_non_printable() -> None:
 
 def test_a_hostile_nsid_is_escaped() -> None:
     q, _, _ = querier(respond(nsid=b"5-ans\n::warning::x\x1b"))
-    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans\\n::warning::x\\x1b")
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(
+        frozenset(), "5-ans\\n::warning::x\\x1b"
+    )
 
 
 def test_an_unexpected_answer_keeps_dnspython_escaping() -> None:
@@ -227,7 +265,9 @@ def test_an_unexpected_answer_keeps_dnspython_escaping() -> None:
 
 
 def test_a_referral_gives_the_delegated_names() -> None:
-    q, _, _ = querier(respond(aa=False, authority=(("iskri.io.", "NS", "A.ns.selectel.ru.|b.ns.selectel.ru."),)))
+    q, _, _ = querier(
+        respond(aa=False, authority=(("iskri.io.", "NS", "A.ns.selectel.ru.|b.ns.selectel.ru."),))
+    )
     assert q.referral("192.0.2.1", QNAME) == Referral(
         frozenset({"a.ns.selectel.ru", "b.ns.selectel.ru"}), "5-ans-prod-spb"
     )
@@ -237,7 +277,9 @@ IO_SOA = (("io.", "SOA", "a0.nic.io. hostmaster.example. 1 2 3 4 5"),)
 
 
 def test_referral_classification() -> None:
-    nxdomain = querier(respond(rcode=dns.rcode.NXDOMAIN, authority=IO_SOA))[0].referral("192.0.2.1", QNAME)
+    nxdomain = querier(respond(rcode=dns.rcode.NXDOMAIN, authority=IO_SOA))[0].referral(
+        "192.0.2.1", QNAME
+    )
     assert nxdomain == NotDelegated("the domain does not exist (NXDOMAIN)", "5-ans-prod-spb")
     nodata = querier(respond(authority=IO_SOA))[0].referral("192.0.2.1", QNAME)
     assert nodata == NotDelegated("the registry has no NS records for the domain", "5-ans-prod-spb")

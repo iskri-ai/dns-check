@@ -16,7 +16,9 @@ expiry:
   min_days_left: 30
 """
 
-GOOD = HEAD + """\
+GOOD = (
+    HEAD
+    + """\
 records:
   "@":
     A: 203.0.113.10
@@ -32,6 +34,7 @@ records:
     CNAME: []
     A: []
 """
+)
 
 
 def rdata(rtype: str, text: str) -> dns.rdata.Rdata:
@@ -52,15 +55,23 @@ def test_loads_a_valid_config() -> None:
     assert config.min_days_left == 30
     by_key = {r.key: r for r in config.records}
     assert sorted(by_key) == [
-        "records @ A", "records @ AAAA", "records @ CAA", "records @ MX", "records @ TXT",
-        "records _dmarc TXT", "records old A", "records old CNAME", "records www CNAME",
+        "records @ A",
+        "records @ AAAA",
+        "records @ CAA",
+        "records @ MX",
+        "records @ TXT",
+        "records _dmarc TXT",
+        "records old A",
+        "records old CNAME",
+        "records www CNAME",
     ]
     assert by_key["records @ A"].qname == dns.name.from_text("iskri.io.")
     assert by_key["records www CNAME"].qname == dns.name.from_text("www.iskri.io.")
     assert by_key["records @ AAAA"].expected == frozenset()
     assert by_key["records @ TXT"].expected == {b"v=spf1 -all", b"google-site-verification=AbC"}
     assert by_key["records @ MX"].expected == {
-        rdata("MX", "10 mx.example.com."), rdata("MX", "20 backup.example.com."),
+        rdata("MX", "10 mx.example.com."),
+        rdata("MX", "20 backup.example.com."),
     }
     assert by_key["records www CNAME"].expected == {rdata("CNAME", "target.example.net.")}
     assert by_key["records @ CAA"].expected == {rdata("CAA", '0 issue "letsencrypt.org"')}
@@ -79,10 +90,12 @@ def test_txt_compares_as_joined_bytes_and_is_case_sensitive() -> None:
 
 
 def test_loaded_values_match_answer_records_regardless_of_spelling() -> None:
-    config = load(records(
-        '  "@": {AAAA: "2001:DB8:0::1", MX: "010 Mail.Example.com"}\n'
-        "  www: {CNAME: Target.Example.NET}\n"
-    ))
+    config = load(
+        records(
+            '  "@": {AAAA: "2001:DB8:0::1", MX: "010 Mail.Example.com"}\n'
+            "  www: {CNAME: Target.Example.NET}\n"
+        )
+    )
     by_key = {r.key: r.expected for r in config.records}
     assert by_key["records @ AAAA"] == {record_value(rdata("AAAA", "2001:db8::1"))}
     assert by_key["records @ MX"] == {record_value(rdata("MX", "10 mail.example.com."))}
@@ -102,12 +115,30 @@ def records(body: str) -> str:
         (HEAD, "root: missing records"),
         (HEAD + "record: {}\n", "root: missing records"),
         (HEAD + "records: {}\nextra: 1\n", "root: unknown keys extra"),
-        (GOOD.replace("min_days_left: 30", "min_days_left: 30\n  min_days: 1"), "expiry: unknown keys"),
-        (GOOD.replace("[a.ns.selectel.ru, B.NS.Selectel.ru.]", "a.ns.selectel.ru"), "nameservers: expected a non-empty list"),
-        (GOOD.replace("[a.ns.selectel.ru, B.NS.Selectel.ru.]", "[]"), "nameservers: expected a non-empty list"),
-        (GOOD.replace("min_days_left: 30", "min_days_left: true"), "min_days_left: expected a positive integer"),
-        (GOOD.replace("min_days_left: 30", "min_days_left: 0"), "min_days_left: expected a positive integer"),
-        (GOOD.replace("min_days_left: 30", 'min_days_left: "30"'), "min_days_left: expected a positive integer"),
+        (
+            GOOD.replace("min_days_left: 30", "min_days_left: 30\n  min_days: 1"),
+            "expiry: unknown keys",
+        ),
+        (
+            GOOD.replace("[a.ns.selectel.ru, B.NS.Selectel.ru.]", "a.ns.selectel.ru"),
+            "nameservers: expected a non-empty list",
+        ),
+        (
+            GOOD.replace("[a.ns.selectel.ru, B.NS.Selectel.ru.]", "[]"),
+            "nameservers: expected a non-empty list",
+        ),
+        (
+            GOOD.replace("min_days_left: 30", "min_days_left: true"),
+            "min_days_left: expected a positive integer",
+        ),
+        (
+            GOOD.replace("min_days_left: 30", "min_days_left: 0"),
+            "min_days_left: expected a positive integer",
+        ),
+        (
+            GOOD.replace("min_days_left: 30", 'min_days_left: "30"'),
+            "min_days_left: expected a positive integer",
+        ),
         (HEAD + "records: [a, b]\n", "records: expected a mapping"),
         (records('  "@": 1.1.1.1\n'), 'records."@": expected a mapping of types'),
         (records('  "@": {}\n'), 'records."@": expected a mapping of types'),
@@ -127,12 +158,18 @@ def records(body: str) -> str:
         (records('  "@": {a: 1.1.1.1}\n'), "unsupported type 'a'"),
         (records('  "@": {A: 203.0.113.010}\n'), "cannot parse '203.0.113.010' as A"),
         (records('  "@": {MX: "mail.example.com"}\n'), "cannot parse 'mail.example.com' as MX"),
-        (records("  old.iskri.io: {A: []}\n"), 'records: "old.iskri.io" must be relative to iskri.io'),
+        (
+            records("  old.iskri.io: {A: []}\n"),
+            'records: "old.iskri.io" must be relative to iskri.io',
+        ),
         (records("  Old.ISKRI.io: {A: []}\n"), "must be relative to iskri.io"),
         (records("  iskri.io: {A: []}\n"), "must be relative to iskri.io"),
         (records("  old.: {A: []}\n"), "must be relative to iskri.io"),
         (records("  example.com.: {A: []}\n"), "must be relative to iskri.io"),
-        (records("  www: {A: []}\n  WWW: {AAAA: []}\n"), 'records: "www" and "WWW" are the same name'),
+        (
+            records("  www: {A: []}\n  WWW: {AAAA: []}\n"),
+            'records: "www" and "WWW" are the same name',
+        ),
         (records("  a..b: {A: []}\n"), "is not a valid DNS name"),
     ],
 )

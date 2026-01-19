@@ -41,7 +41,9 @@ def change_lines(changes: Sequence[Change], now: datetime.datetime) -> list[str]
     for change in changes:
         result = change.result
         if result.status is Status.OK:
-            lines.append(f"OK {result.key}: recovered after {duration(now - change.previous_since)}")
+            lines.append(
+                f"OK {result.key}: recovered after {duration(now - change.previous_since)}"
+            )
         elif result.status is Status.UNKNOWN:
             lines.append(f"UNKNOWN {result.key}: could not check: {result.detail}")
         else:

@@ -107,9 +107,7 @@ class Querier:
                 self._lookups[key] = None
         return self._lookups[key]
 
-    def authoritative(
-        self, address: str, qname: dns.name.Name, rdtype: str
-    ) -> Records | Unusable:
+    def authoritative(self, address: str, qname: dns.name.Name, rdtype: str) -> Records | Unusable:
         """Query an authoritative server and classify the response."""
         response = self._send(address, qname, rdtype)
         if isinstance(response, Unusable):
@@ -133,9 +131,7 @@ class Querier:
             frozenset(record_value(rdata) for rrset in response.answer for rdata in rrset), nsid
         )
 
-    def referral(
-        self, address: str, qname: dns.name.Name
-    ) -> Referral | NotDelegated | Unusable:
+    def referral(self, address: str, qname: dns.name.Name) -> Referral | NotDelegated | Unusable:
         """Ask a TLD server for the delegation of qname."""
         response = self._send(address, qname, "NS")
         if isinstance(response, Unusable):
@@ -204,7 +200,11 @@ def printable(text: str) -> str:
     in a Telegram message. Use it for display only, never for comparison.
     """
     return "".join(
-        "\\\\" if char == "\\" else char if char.isprintable() else char.encode("unicode_escape").decode()
+        "\\\\"
+        if char == "\\"
+        else char
+        if char.isprintable()
+        else char.encode("unicode_escape").decode()
         for char in text
     )
 

@@ -30,8 +30,20 @@ RUN = "https://github.com/iskri-ai/dns-check/actions/runs/1"
 def test_change_lines_are_worded_by_the_new_status() -> None:
     lines = change_lines(
         [
-            Change(Status.OK, NOW, Result("soa", Status.FAIL, "serials differ: 188.68.203.1 [5-ans-prod-spb] 1, all others 2")),
-            Change(Status.FAIL, NOW - datetime.timedelta(hours=3, minutes=12), Result("records @ TXT", Status.OK, "")),
+            Change(
+                Status.OK,
+                NOW,
+                Result(
+                    "soa",
+                    Status.FAIL,
+                    "serials differ: 188.68.203.1 [5-ans-prod-spb] 1, all others 2",
+                ),
+            ),
+            Change(
+                Status.FAIL,
+                NOW - datetime.timedelta(hours=3, minutes=12),
+                Result("records @ TXT", Status.OK, ""),
+            ),
             Change(Status.OK, NOW, Result("expiry", Status.UNKNOWN, "RDAP: HTTP 503")),
         ],
         NOW,
@@ -57,7 +69,9 @@ def test_duration(delta: datetime.timedelta, text: str) -> None:
 
 def results(*records: Result) -> list[Result]:
     return [
-        Result("delegation", Status.OK, "a.ns.selectel.ru, b.ns.selectel.ru (3/4 .io servers answered)"),
+        Result(
+            "delegation", Status.OK, "a.ns.selectel.ru, b.ns.selectel.ru (3/4 .io servers answered)"
+        ),
         Result("soa", Status.OK, "serial 2026111001 on 4 addresses"),
         Result("expiry", Status.OK, "expires 2027-11-10, 363 days left"),
         *records,
@@ -88,7 +102,9 @@ def test_heartbeat_expands_a_failing_check_and_handles_no_records() -> None:
 def test_heartbeat_warns_from_50_days_without_commits() -> None:
     assert not any("no commits" in line for line in heartbeat_lines(results(), {}, 49))
     warning = heartbeat_lines(results(), {}, 52)[-1]
-    assert warning.startswith("no commits on master for 52 days. GitHub may disable the schedule at 60 days")
+    assert warning.startswith(
+        "no commits on master for 52 days. GitHub may disable the schedule at 60 days"
+    )
 
 
 def test_compose_sends_nothing_without_changes_or_heartbeat() -> None:
@@ -97,15 +113,26 @@ def test_compose_sends_nothing_without_changes_or_heartbeat() -> None:
 
 def test_compose_puts_changes_and_heartbeat_in_one_message() -> None:
     lines = compose("iskri.io", ["FAIL soa: x"], ["soa fail: x"])
-    assert lines == ["iskri.io: 1 status change", "FAIL soa: x", "", "iskri.io: daily summary", "soa fail: x"]
+    assert lines == [
+        "iskri.io: 1 status change",
+        "FAIL soa: x",
+        "",
+        "iskri.io: daily summary",
+        "soa fail: x",
+    ]
 
 
 def test_abort_text() -> None:
-    assert abort_text("iskri.io", "invalid expected.yaml: x", RUN) == "iskri.io: run aborted: invalid expected.yaml: x\n" + RUN
+    assert (
+        abort_text("iskri.io", "invalid expected.yaml: x", RUN)
+        == "iskri.io: run aborted: invalid expected.yaml: x\n" + RUN
+    )
 
 
 def test_cap_drops_lines_past_the_limit_and_keeps_the_link_last() -> None:
-    lines = ["iskri.io: 300 status changes"] + [f"FAIL records r{i} A: " + "x" * 40 for i in range(300)]
+    lines = ["iskri.io: 300 status changes"] + [
+        f"FAIL records r{i} A: " + "x" * 40 for i in range(300)
+    ]
     text = cap(lines, RUN)
     assert len(text) <= LIMIT
     assert text.endswith("more lines in the run log\n" + RUN)
@@ -139,14 +166,23 @@ def test_telegram_sends_plain_text_to_the_thread() -> None:
     assert request.get_method() == "POST"
     assert isinstance(request.data, bytes)
     assert urllib.parse.parse_qs(request.data.decode()) == {
-        "chat_id": ["-100500"], "message_thread_id": ["42"], "text": ["hello <b>&"]}
+        "chat_id": ["-100500"],
+        "message_thread_id": ["42"],
+        "text": ["hello <b>&"],
+    }
 
 
 def test_telegram_errors_never_carry_exception_text() -> None:
     errors: list[Exception] = [
         urllib.error.URLError("https://api.telegram.org/bot123:token/sendMessage"),
         TimeoutError("123:token"),
-        urllib.error.HTTPError("https://api.telegram.org/bot123:token/sendMessage", 400, "123:token", email.message.Message(), None),
+        urllib.error.HTTPError(
+            "https://api.telegram.org/bot123:token/sendMessage",
+            400,
+            "123:token",
+            email.message.Message(),
+            None,
+        ),
     ]
     sleeps: list[float] = []
 

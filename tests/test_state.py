@@ -18,7 +18,9 @@ def test_read_write_round_trip(tmp_path: Path) -> None:
     state = {"soa": Entry(Status.FAIL, T0), "records @ TXT": Entry(Status.OK, T0)}
     store.write(state)
 
-    assert path.read_text() == """\
+    assert (
+        path.read_text()
+        == """\
 {
   "records @ TXT": {
     "since": "2026-11-11T12:07:00+00:00",
@@ -30,6 +32,7 @@ def test_read_write_round_trip(tmp_path: Path) -> None:
   }
 }
 """
+    )
     assert Store(path).read() == state
 
 

@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="dnscheck")
     parser.add_argument("--heartbeat", action="store_true", help="also send the daily summary")
     parser.add_argument("--config", type=Path, default=Path("expected.yaml"))
-    parser.add_argument("--state", type=Path, required=True, help="the state.json to read and update")
+    parser.add_argument(
+        "--state", type=Path, required=True, help="the state.json to read and update"
+    )
     args = parser.parse_args(argv)
     return run(
         config_path=args.config,
@@ -163,7 +165,7 @@ def _check(
     if heartbeat:
         try:
             days: int | None = (now - deps.commit_time(repo)).days
-        except (subprocess.CalledProcessError, ValueError, OSError):
+        except subprocess.CalledProcessError, ValueError, OSError:
             days = None
         since = {key: entry.since for key, entry in new_state.items()}
         summary = heartbeat_lines(results, since, days)
