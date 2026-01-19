@@ -71,6 +71,8 @@ Do these steps once, in this order.
 uv sync
 uv run pytest
 uv run mypy
+uv run ruff check
+uv run ruff format
 ```
 
 Tests make no network calls. pytest-socket blocks them.

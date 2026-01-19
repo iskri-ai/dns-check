@@ -64,7 +64,7 @@ class FakeTransport:
     def __call__(self, query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
         self.calls.append((query, address, timeout))
         outcome = self.outcomes.pop(0)
-        if isinstance(outcome, type) or isinstance(outcome, BaseException):
+        if isinstance(outcome, (type, BaseException)):
             raise outcome
         return outcome(query)
 

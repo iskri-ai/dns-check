@@ -121,7 +121,8 @@ def test_delegation_unknown_when_no_server_answers_or_the_lookup_fails() -> None
 
     querier = FakeQuerier()
     querier.lookups[("io.", "NS")] = None
-    assert checks.delegation(querier, CONFIG) == Result("delegation", Status.UNKNOWN, "could not look up the io. servers")  # type: ignore[arg-type]
+    result = checks.delegation(querier, CONFIG)  # type: ignore[arg-type]
+    assert result == Result("delegation", Status.UNKNOWN, "could not look up the io. servers")
 
 
 # soa
@@ -129,7 +130,8 @@ def test_delegation_unknown_when_no_server_answers_or_the_lookup_fails() -> None
 
 def test_soa_ok_with_equal_serials_and_32_samples() -> None:
     querier = FakeQuerier(lambda address, qname, rdtype: soa_record(2026111002))
-    assert checks.soa(querier, CONFIG) == Result("soa", Status.OK, "serial 2026111002 on 4 addresses")  # type: ignore[arg-type]
+    result = checks.soa(querier, CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.OK, "serial 2026111002 on 4 addresses")
     assert len(querier.calls) == 32
 
 
@@ -152,7 +154,8 @@ def test_soa_unknown_when_an_address_gives_no_response_and_the_rest_agree() -> N
 def test_soa_unknown_on_a_failed_address_lookup() -> None:
     querier = FakeQuerier(lambda *args: soa_record(2026111002))
     querier.lookups[("d.ns.selectel.ru", "A")] = None
-    assert checks.soa(querier, CONFIG) == Result("soa", Status.UNKNOWN, "d.ns.selectel.ru: address lookup failed")  # type: ignore[arg-type]
+    result = checks.soa(querier, CONFIG)  # type: ignore[arg-type]
+    assert result == Result("soa", Status.UNKNOWN, "d.ns.selectel.ru: address lookup failed")
 
 
 def test_soa_fails_on_a_received_unusable_answer() -> None:
@@ -178,12 +181,14 @@ def test_soa_failure_outranks_silence_and_lists_wrong_answers_first() -> None:
     querier = FakeQuerier(answers)
     querier.lookups[("d.ns.selectel.ru", "A")] = None
     result = checks.soa(querier, CONFIG)  # type: ignore[arg-type]
-    assert result == Result("soa", Status.FAIL, "; ".join([
-        "c.ns.selectel.ru (188.68.203.3) [7-ans-prod-spb]: 0 SOA records",
-        "serials differ: 188.68.203.1 [2-ans-prod-spb] 2026111001, all others 2026111002",
-        "d.ns.selectel.ru: address lookup failed",
+    assert result == Result(
+        "soa",
+        Status.FAIL,
+        "c.ns.selectel.ru (188.68.203.3) [7-ans-prod-spb]: 0 SOA records; "
+        "serials differ: 188.68.203.1 [2-ans-prod-spb] 2026111001, all others 2026111002; "
+        "d.ns.selectel.ru: address lookup failed; "
         "b.ns.selectel.ru (77.223.114.2): unreachable",
-    ]))
+    )
 
 
 ANSWERS = {

@@ -117,7 +117,7 @@ def run(
         return 0
     except Aborted as exc:
         reason = str(exc)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 any failure becomes the abort message
         traceback.print_exc()
         reason = f"unexpected error ({type(exc).__name__})"
     print(f"run aborted: {reason}", file=sys.stderr)

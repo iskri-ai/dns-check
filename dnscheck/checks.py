@@ -20,7 +20,7 @@ import dns.name
 from dns.rdtypes.ANY.SOA import SOA
 
 from dnscheck.config import Config, RecordSet, RecordValue
-from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable, printable
+from dnscheck.query import NotDelegated, Querier, Referral, Unusable, printable
 
 SOA_SAMPLES = 8
 """SOA queries per address and pass, so one lagging backend instance is unlikely to hide."""

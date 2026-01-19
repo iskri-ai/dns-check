@@ -14,6 +14,7 @@ dev = [
     "mypy>=2.4.1",
     "pytest>=9.2.0",
     "pytest-socket>=0.8.1",
+    "ruff>=0.17.4",
     "types-pyyaml>=6.0.12",
 ]
 
@@ -28,3 +29,6 @@ addopts = "--disable-socket --strict-markers" # no network in tests
 [tool.mypy]
 strict = true
 files = ["dnscheck", "tests"]
+
+[tool.ruff]
+line-length = 100
