@@ -231,12 +231,14 @@ ANSWERS = {
 }
 
 
-def transport(silent: str) -> Callable[[dns.message.Message, str, float], dns.message.Message]:
-    """A transport that times out for one address and answers SOA and A for the rest."""
+def transport(
+    silent: str, error: type[Exception] = dns.exception.Timeout
+) -> Callable[[dns.message.Message, str, float], dns.message.Message]:
+    """A transport that raises error for one address and answers SOA and A for the rest."""
 
     def send(query: dns.message.Message, address: str, timeout: float) -> dns.message.Message:
         if address == silent:
-            raise dns.exception.Timeout
+            raise error
         question = query.question[0]
         response = dns.message.make_response(query)
         response.flags |= dns.flags.AA
@@ -254,10 +256,10 @@ def transport(silent: str) -> Callable[[dns.message.Message, str, float], dns.me
     return send
 
 
-def real_querier(silent: str) -> Querier:
+def real_querier(silent: str, error: type[Exception] = dns.exception.Timeout) -> Querier:
     addresses = {name: [address] for name, address in SELECTEL.items()}
     return Querier(
-        transport=transport(silent),
+        transport=transport(silent, error),
         resolve=lambda name, rdtype: addresses[name],
         sleep=lambda s: None,
     )
@@ -273,6 +275,13 @@ def test_a_timed_out_address_reaches_records_as_unknown_through_the_real_querier
     assert checks.records(real_querier(SELECTEL["b.ns.selectel.ru"]), CONFIG, sets) == [
         Result("records @ A", Status.UNKNOWN, "77.223.114.2: unreachable")
     ]
+
+
+def test_a_malformed_response_reaches_soa_as_fail_through_the_real_querier() -> None:
+    result = checks.soa(real_querier(SELECTEL["b.ns.selectel.ru"], dns.exception.FormError), CONFIG)
+    assert result == Result(
+        "soa", Status.FAIL, "b.ns.selectel.ru (77.223.114.2): malformed response: FormError"
+    )
 
 
 def hostile_transport(

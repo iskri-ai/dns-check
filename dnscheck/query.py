@@ -190,6 +190,9 @@ class Querier:
                 return response
             except dns.exception.Timeout:
                 timeouts += 1
+            # a response arrived but doesn't parse or match the query
+            except dns.exception.FormError as exc:
+                return Unusable(f"malformed response: {type(exc).__name__}")
             # dnspython raises a plain EOFError when a server closes TCP mid-answer
             except (dns.exception.DNSException, OSError, EOFError) as exc:
                 reason = f"transport error: {type(exc).__name__}"
