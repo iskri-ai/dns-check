@@ -36,8 +36,6 @@ from dnscheck.query import Querier
 from dnscheck.state import Entry, State, StateError, Store
 
 RECHECK_DELAY = 120.0
-HEARTBEAT_CRON = "17 4 * * *"
-"""Must match the heartbeat cron line in .github/workflows/dns-check.yml."""
 
 
 class Aborted(Exception):
@@ -97,7 +95,6 @@ def run(
 ) -> int:
     deps = deps or Deps()
     run_url = _run_url(env)
-    heartbeat = heartbeat or env.get("SCHEDULE") == HEARTBEAT_CRON or env.get("HEARTBEAT") == "true"
     names = ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_THREAD_ID")
     missing = [name for name in names if not env.get(name)]
     if missing:

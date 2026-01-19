@@ -228,23 +228,15 @@ def test_a_recovery_reports_the_duration(harness: Any) -> None:
     assert h.messenger.sent == [f"iskri.io: 1 status change\nOK soa: recovered after 3h 12m\n{RUN}"]
 
 
-@pytest.mark.parametrize("env", [{"SCHEDULE": "17 4 * * *"}, {"HEARTBEAT": "true"}])
-def test_heartbeat_runs_send_the_summary(harness: Any, env: dict[str, str]) -> None:
+def test_a_heartbeat_run_sends_the_summary(harness: Any) -> None:
     h = harness(all_(Status.OK))
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
     h.commit_age = datetime.timedelta(days=52)
-    assert h.run(env=env) == 0
+    assert h.run(heartbeat=True) == 0
     text = h.messenger.sent[0]
     assert text.startswith("iskri.io: daily summary\ndelegation ok: delegation detail\n")
     assert "records: 1/1 ok" in text
     assert "no commits on master for 52 days" in text
-
-
-def test_a_regular_schedule_is_not_a_heartbeat(harness: Any) -> None:
-    h = harness(all_(Status.OK))
-    h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
-    assert h.run(env={"SCHEDULE": "7,37 * * * *", "HEARTBEAT": "false"}) == 0
-    assert h.messenger.sent == []
 
 
 def test_an_unreadable_commit_date_is_reported_in_the_heartbeat(harness: Any) -> None:
@@ -311,7 +303,10 @@ def test_empty_telegram_values_abort_before_anything_else(harness: Any) -> None:
     assert h.messenger.attempts == 0
 
 
-def test_main_passes_the_options_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("flags", "heartbeat"), [([], False), (["--heartbeat"], True)])
+def test_main_passes_the_options_to_run(
+    monkeypatch: pytest.MonkeyPatch, flags: list[str], heartbeat: bool
+) -> None:
     calls: list[dict[str, Any]] = []
 
     def fake_run(**kwargs: Any) -> int:
@@ -319,13 +314,13 @@ def test_main_passes_the_options_to_run(monkeypatch: pytest.MonkeyPatch) -> None
         return 1
 
     monkeypatch.setattr(main, "run", fake_run)
-    assert main.main(["--state", "some/state.json"]) == 1
+    assert main.main(["--state", "some/state.json", *flags]) == 1
     assert calls == [
         {
             "config_path": Path("expected.yaml"),
             "state_path": Path("some/state.json"),
             "repo": Path.cwd(),
-            "heartbeat": False,
+            "heartbeat": heartbeat,
             "env": os.environ,
         }
     ]
@@ -343,7 +338,3 @@ def test_diff_treats_new_keys_as_previously_ok_and_drops_removed_ones() -> None:
     new_state, changes = diff(state, [Result("soa", Status.OK, ""), Result("records @ A", Status.FAIL, "x")], NOW)
     assert new_state == {"soa": Entry(Status.OK, earlier), "records @ A": Entry(Status.FAIL, NOW)}
     assert [(c.previous, c.result.key) for c in changes] == [(Status.OK, "records @ A")]
-
-
-def test_the_heartbeat_cron_matches_the_constant() -> None:
-    assert main.HEARTBEAT_CRON == "17 4 * * *"
