@@ -11,7 +11,6 @@ import argparse
 import dataclasses
 import datetime
 import os
-import subprocess
 import sys
 import time
 import traceback
@@ -51,13 +50,6 @@ class Messenger(Protocol):
     def send(self, text: str) -> None: ...
 
 
-def _commit_time(repo: Path) -> datetime.datetime:
-    output = subprocess.run(
-        ["git", "log", "-1", "--format=%ct", "HEAD"], cwd=repo, capture_output=True, check=True
-    ).stdout
-    return datetime.datetime.fromtimestamp(int(output), datetime.UTC)
-
-
 @dataclasses.dataclass
 class Deps:
     querier: Callable[[], Querier] = Querier
@@ -66,7 +58,6 @@ class Deps:
     messenger: Callable[[str, str, str], Messenger] = Telegram
     now: Callable[[], datetime.datetime] = lambda: datetime.datetime.now(datetime.UTC)
     sleep: Callable[[float], None] = time.sleep
-    commit_time: Callable[[Path], datetime.datetime] = _commit_time
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,7 +71,6 @@ def main(argv: list[str] | None = None) -> int:
     return run(
         config_path=args.config,
         state_path=args.state,
-        repo=Path.cwd(),
         heartbeat=args.heartbeat,
         env=os.environ,
     )
@@ -90,7 +80,6 @@ def run(
     *,
     config_path: Path,
     state_path: Path,
-    repo: Path,
     heartbeat: bool,
     env: Mapping[str, str],
     deps: Deps | None = None,
@@ -110,7 +99,6 @@ def run(
         _check(
             config,
             state_path=state_path,
-            repo=repo,
             heartbeat=heartbeat,
             run_url=run_url,
             messenger=messenger,
@@ -145,7 +133,6 @@ def _check(
     config: Config,
     *,
     state_path: Path,
-    repo: Path,
     heartbeat: bool,
     run_url: str,
     messenger: Messenger,
@@ -163,12 +150,8 @@ def _check(
 
     summary = None
     if heartbeat:
-        try:
-            days: int | None = (now - deps.commit_time(repo)).days
-        except subprocess.CalledProcessError, ValueError, OSError:
-            days = None
         since = {key: entry.since for key, entry in new_state.items()}
-        summary = heartbeat_lines(results, since, days)
+        summary = heartbeat_lines(results, since)
 
     lines = compose(config.domain, change_lines(changes, now), summary)
     if lines is not None:

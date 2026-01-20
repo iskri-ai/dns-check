@@ -1,6 +1,5 @@
 import datetime
 import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -85,8 +84,6 @@ class Harness:
         self.sleeps: list[float] = []
         self.passes = list(passes)
         self.asked: list[list[str]] = []
-        self.commit_age = datetime.timedelta(days=3)
-        self.commit_error: Exception | None = None
         current: dict[str, Status] = {}
 
         def scripted(key: str) -> Result:
@@ -108,11 +105,6 @@ class Harness:
         monkeypatch.setattr(checks, "records", lambda q, c, sets: [record(r.key) for r in sets])
         self.querier = querier
 
-    def commit_time(self, repo: Path) -> datetime.datetime:
-        if self.commit_error:
-            raise self.commit_error
-        return NOW - self.commit_age
-
     def open_store(self, path: Path) -> FakeStore:
         self.store.path = path
         return self.store
@@ -125,13 +117,11 @@ class Harness:
             messenger=lambda token, chat, thread: self.messenger,
             now=lambda: NOW,
             sleep=self.sleeps.append,
-            commit_time=self.commit_time,
         )
         env = {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}
         code = run(
             config_path=self.config,
             state_path=self.state_path,
-            repo=self.config.parent,
             heartbeat=heartbeat,
             env=env,
             deps=deps,
@@ -238,19 +228,10 @@ def test_a_recovery_reports_the_duration(harness: Any) -> None:
 def test_a_heartbeat_run_sends_the_summary(harness: Any) -> None:
     h = harness(all_(Status.OK))
     h.store.state = {key: Entry(Status.OK, NOW) for key in KEYS}
-    h.commit_age = datetime.timedelta(days=52)
     assert h.run(heartbeat=True) == 0
     text = h.messenger.sent[0]
     assert text.startswith("iskri.io: daily summary\ndelegation ok: delegation detail\n")
     assert "records: 1/1 ok" in text
-    assert "no commits on master for 52 days" in text
-
-
-def test_an_unreadable_commit_date_is_reported_in_the_heartbeat(harness: Any) -> None:
-    h = harness(all_(Status.OK))
-    h.commit_error = subprocess.CalledProcessError(128, ["git"])
-    assert h.run(heartbeat=True) == 0
-    assert "could not read the date of the latest commit on master" in h.messenger.sent[0]
 
 
 def test_a_failed_send_aborts_without_saving_the_state(harness: Any) -> None:
@@ -334,7 +315,6 @@ def test_main_passes_the_options_to_run(
         {
             "config_path": Path("expected.yaml"),
             "state_path": Path("some/state.json"),
-            "repo": Path.cwd(),
             "heartbeat": heartbeat,
             "env": os.environ,
         }

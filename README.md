@@ -18,7 +18,7 @@ A run that completes ends green on GitHub even when checks fail or are unknown, 
 ## Messages
 
 - **Status changes**: one message per run, only when a status changed. A recovery shows how long the problem lasted.
-- **Daily summary** at about 09:23 Asia/Almaty (04:23 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
+- **Daily summary** at about 09:23 Asia/Almaty (04:23 UTC): every check with its key facts and current problems.
 - **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. For runs started by cron-job.org, GitHub may also [email the token owner](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs), depending on their [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
 ## Changing expected.yaml
