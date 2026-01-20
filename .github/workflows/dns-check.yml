@@ -1,6 +1,11 @@
 name: dns-check
 
 on:
+  schedule:
+    # any cron other than this exact line sends the daily summary
+    - cron: "7,37 * * * *"
+    # daily summary at 09:17 Asia/Almaty
+    - cron: "17 4 * * *"
   workflow_dispatch:
     inputs:
       heartbeat:
@@ -43,10 +48,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID: ${{ vars.TELEGRAM_THREAD_ID }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
           HEARTBEAT_INPUT: ${{ inputs.heartbeat }}
+        # a mismatch here sends extra summaries rather than none
         run: |
           heartbeat=()
-          if [[ $HEARTBEAT_INPUT == true ]]; then
+          if [[ $GITHUB_EVENT_NAME != workflow_dispatch && $EVENT_SCHEDULE != '7,37 * * * *' ]] \
+            || [[ $HEARTBEAT_INPUT == true ]]; then
             heartbeat=(--heartbeat)
           fi
           uv run --no-sync python -m dnscheck --state .state/state.json "${heartbeat[@]}"
