@@ -161,6 +161,7 @@ def test_telegram_sends_plain_text_to_the_thread() -> None:
         "chat_id": ["-100500"],
         "message_thread_id": ["42"],
         "text": ["hello <b>&"],
+        "link_preview_options": ['{"is_disabled":true}'],
     }
 
 
