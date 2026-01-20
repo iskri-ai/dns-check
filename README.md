@@ -1,6 +1,6 @@
 # dns-check
 
-A scheduled GitHub Actions job that checks the DNS setup of iskri.io against [expected.yaml](expected.yaml) and reports to Telegram.
+A GitHub Actions job, started by cron-job.org, that checks the DNS setup of iskri.io against [expected.yaml](expected.yaml) and reports to Telegram.
 
 Every 30 minutes the job queries the .io TLD servers, the Selectel nameservers and RDAP directly. It sends a Telegram message when a check changes its status, and a daily summary.
 
@@ -18,14 +18,14 @@ A run that completes ends green on GitHub even when checks fail or are unknown, 
 ## Messages
 
 - **Status changes**: one message per run, only when a status changed. A recovery shows how long the problem lasted.
-- **Daily summary** at about 09:18 Asia/Almaty (04:18 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
-- **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. Whether GitHub also emails someone depends on its [rules for scheduled workflows](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs) and that user's [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
+- **Daily summary** at about 09:23 Asia/Almaty (04:23 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
+- **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. For runs started by cron-job.org, GitHub may also [email the token owner](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs), depending on their [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
 ## Changing expected.yaml
 
 The comments at the top of `expected.yaml` describe the format. The loader checks the structure, the record names and the values before the first query, and CI loads the real file on every pull request to `master`. A valid file can still be wrong. Removing a record from the file stops checking it, without a message.
 
-A mismatch is reported while either change is pending. To avoid a `fail` message and the recovery message after it, land both changes while no check is running. Checks are scheduled at :08 and :38 past each hour, GitHub can start them late, and a run takes a few minutes.
+A mismatch is reported while either change is pending. To avoid a `fail` message and the recovery message after it, land both changes while no check is running. cron-job.org calls at about :08 and :38 past each hour and at 04:23 UTC for the summary. A run can start later than its call, and it takes a few minutes.
 
 Any zone edit, even to an unlisted record, changes the SOA serial. A run that queries the nameservers while they update can report a `soa` fail, followed by a recovery.
 
@@ -48,6 +48,29 @@ Do these steps once, in this order.
    ```
 
    Then a **`state` ruleset** that blocks deletion and force pushes but allows normal pushes.
+5. **External scheduler**: the token and the two cron-job.org jobs described under [External scheduler](#external-scheduler).
+
+## External scheduler
+
+The GitHub schedule trigger started few of the runs in this repo, so the workflow has none. [cron-job.org](https://cron-job.org) starts the scheduled runs through the GitHub API instead, with two jobs:
+
+- **dns-check checks**: every hour at :08 and :38, body `{"ref":"master","inputs":{"heartbeat":"false"}}`.
+- **dns-check daily summary**: daily at 04:23 UTC, body `{"ref":"master","inputs":{"heartbeat":"true"}}`.
+
+Both send `POST https://api.github.com/repos/iskri-ai/dns-check/actions/workflows/dns-check.yml/dispatches` with the headers `Accept: application/vnd.github+json`, `Authorization: Bearer <token>`, `X-GitHub-Api-Version: 2022-11-28` and `Content-Type: application/json`. Each job has cron-job.org notifications on for a failed call, a success after a failure and a disabled job. The minutes avoid the top of the hour, when cron-job.org and the GitHub API are busiest. The cron-job.org account uses 2FA and an email address outside iskri.io.
+
+The token is a fine-grained personal access token of `gurza`, with `iskri-ai` as the resource owner, access to `dns-check` only, and the Actions read and write permission plus the Metadata read that GitHub adds to every token. It is valid for one year, and GitHub emails the owner before it expires.
+
+A disabled workflow, an expired token or a file GitHub can't parse makes the dispatch call fail, and cron-job.org emails about it. A missing daily summary with no red run can mean the summary job isn't calling, or its body doesn't send `heartbeat=true`.
+
+To rotate the token:
+
+1. Create a new token with the same settings.
+2. Replace the `Authorization` header in both jobs.
+3. Start one job by hand in cron-job.org and check that its run passes.
+4. Revoke the old token.
+
+To hand over the scheduler, the new maintainer issues their own token, takes over the jobs in their own cron-job.org account or the existing one, revokes the old token and updates the owner in this section.
 
 ## Operations
 
@@ -59,12 +82,7 @@ Do these steps once, in this order.
   ```
 
   A manual run on another branch uses that branch's workflow file with the repo secrets.
-- **Workflow changes.** After a change to `dns-check.yml` merges, start a manual run from `master` and check that it passes. CI doesn't check this file, and a broken one stops the scheduled runs without a message.
-- **Schedule disabled.** GitHub disables scheduled workflows in a public repo after 60 days without activity. The daily summary warns from day 50, and a missing summary is the last signal. To restore the schedule:
-
-  ```sh
-  gh workflow enable dns-check.yml
-  ```
+- **Workflow changes.** After a change to `dns-check.yml` merges, start a manual run from `master` and check that it passes. CI doesn't check this file. A file GitHub can't parse makes the dispatch call fail, and cron-job.org emails about it.
 
 ## Development
 
