@@ -57,7 +57,7 @@ The GitHub schedule trigger started few of the runs in this repo, so the workflo
 - **dns-check checks**: every hour at :08 and :38, body `{"ref":"master","inputs":{"heartbeat":"false"}}`.
 - **dns-check daily summary**: daily at 04:23 UTC, body `{"ref":"master","inputs":{"heartbeat":"true"}}`.
 
-Both send `POST https://api.github.com/repos/iskri-ai/dns-check/actions/workflows/dns-check.yml/dispatches` with the headers `Accept: application/vnd.github+json`, `Authorization: Bearer <token>`, `X-GitHub-Api-Version: 2022-11-28` and `Content-Type: application/json`. Each job has cron-job.org notifications on for a failed call, a success after a failure and a disabled job. The minutes avoid the top of the hour, when cron-job.org and the GitHub API are busiest. The cron-job.org account uses 2FA and an email address outside iskri.io.
+Both send `POST https://api.github.com/repos/iskri-ai/dns-check/actions/workflows/dns-check.yml/dispatches` with the headers `Accept: application/vnd.github+json`, `Authorization: Bearer <token>`, `X-GitHub-Api-Version: 2026-03-10` and `Content-Type: application/json`. With this version, a successful call returns 200 with the ID and URLs of the new run. Each job has cron-job.org notifications on for a failed call, a success after a failure and a disabled job. The minutes avoid the top of the hour, when cron-job.org and the GitHub API are busiest. The cron-job.org account uses 2FA and an email address outside iskri.io.
 
 The token is a fine-grained personal access token of `gurza`, with `iskri-ai` as the resource owner, access to `dns-check` only, and the Actions read and write permission plus the Metadata read that GitHub adds to every token. It is valid for one year, and GitHub emails the owner before it expires.
 
