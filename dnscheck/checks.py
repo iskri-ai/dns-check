@@ -157,36 +157,26 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
         return Result(
             key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}"
         )
-    fails: list[str] = []
-    unknowns: list[str] = []
-    status = data.get("status")
-    entries = status if isinstance(status, list) else []
-    if any(isinstance(value, str) and _squash(value) == "autorenewperiod" for value in entries):
-        fails.append(AUTO_RENEWED)
-    # a domain must have at least one EPP status
-    if not entries or not all(isinstance(value, str) for value in entries):
-        unknowns.append("RDAP: missing, empty or malformed status array")
-
-    facts = ""
     expires, problem = _expiration(data)
-    if expires is None:
-        unknowns.append(problem)
-    else:
+    facts = ""
+    if expires is not None:
         left = expires - now
         date = expires.astimezone(datetime.UTC).date().isoformat()
         if left < datetime.timedelta(0):
-            fails.append(f"expired on {date}")
-        else:
-            facts = f"expires {date}, {left.days} days left"
-            if left < datetime.timedelta(days=config.min_days_left):
-                fails.append(f"{facts}, minimum {config.min_days_left}")
-            elif fails:
-                fails[-1] += f" ({facts})"
+            return Result(key, Status.FAIL, f"expired on {date}")
+        facts = f"expires {date}, {left.days} days left"
+        if left < datetime.timedelta(days=config.min_days_left):
+            return Result(key, Status.FAIL, f"{facts}, minimum {config.min_days_left}")
 
-    if fails:
-        return Result(key, Status.FAIL, "; ".join(fails + unknowns))
-    if unknowns:
-        return Result(key, Status.UNKNOWN, "; ".join(unknowns))
+    status = data.get("status")
+    entries = status if isinstance(status, list) else []
+    if any(isinstance(value, str) and _squash(value) == "autorenewperiod" for value in entries):
+        return Result(key, Status.FAIL, f"{AUTO_RENEWED} ({facts})" if facts else AUTO_RENEWED)
+    if expires is None:
+        return Result(key, Status.UNKNOWN, problem)
+    # a domain must have at least one EPP status
+    if not entries or not all(isinstance(value, str) for value in entries):
+        return Result(key, Status.UNKNOWN, "RDAP: missing, empty or malformed status array")
     return Result(key, Status.OK, facts)
 
 
