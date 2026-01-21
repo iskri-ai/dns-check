@@ -132,6 +132,17 @@ def test_cap_cuts_the_text_at_the_limit_and_keeps_the_link_last() -> None:
     assert "\n".join(lines).startswith(text.removesuffix(tail))
 
 
+def test_cap_keeps_a_text_of_exactly_the_limit() -> None:
+    lines = ["x" * (LIMIT - len(RUN) - 1)]
+    assert cap(lines, RUN) == lines[0] + "\n" + RUN
+
+
+def test_cap_cuts_a_text_one_over_the_limit() -> None:
+    text = cap(["x" * (LIMIT - len(RUN))], RUN)
+    assert len(text) == LIMIT
+    assert text.endswith("x…\nthe full message is in the run log\n" + RUN)
+
+
 class FakeResponse(io.BytesIO):
     def __init__(self, body: dict[str, Any], status: int = 200) -> None:
         super().__init__(json.dumps(body).encode())
