@@ -210,14 +210,15 @@ def printable(text: str) -> str:
     Text from a server can then never start a new line in the job log or
     in a Telegram message. Use it for display only, never for comparison.
     """
-    return "".join(
-        "\\\\"
-        if char == "\\"
-        else char
-        if char.isprintable()
-        else char.encode("unicode_escape").decode()
-        for char in text
-    )
+    parts: list[str] = []
+    for char in text:
+        if char == "\\":
+            parts.append("\\\\")
+        elif char.isprintable():
+            parts.append(char)
+        else:
+            parts.append(char.encode("unicode_escape").decode())
+    return "".join(parts)
 
 
 def _nsid(response: dns.message.Message) -> str:
