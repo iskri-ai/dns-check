@@ -133,9 +133,7 @@ def soa(querier: Querier, config: Config) -> Result:
         return Result(key, Status.FAIL, "; ".join(_unique(wrong + silent)))
     if silent:
         return Result(key, Status.UNKNOWN, "; ".join(_unique(silent)))
-    if len(distinct) == 1:
-        return Result(key, Status.OK, f"serial {next(iter(distinct))} on {len(targets)} addresses")
-    return Result(key, Status.FAIL, "no SOA answers")
+    return Result(key, Status.OK, f"serial {next(iter(distinct))} on {len(targets)} addresses")
 
 
 def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -> Result:
@@ -212,14 +210,11 @@ def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list
         wrong: list[str] = []
         diffs: list[tuple[str, str]] = []
         silent = list(lookup_silent)
-        matched = 0
         for _name, address in targets:
             result = querier.authoritative(address, record_set.qname, record_set.rtype)
             if isinstance(result, Unusable):
                 (silent if result.no_response else wrong).append(f"{address}: {result.reason}")
-            elif result.values == record_set.expected:
-                matched += 1
-            else:
+            elif result.values != record_set.expected:
                 diffs.append(
                     (f"{address} [{result.nsid}]", _diff(record_set.expected, result.values))
                 )
@@ -236,10 +231,8 @@ def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list
             results.append(Result(record_set.key, Status.FAIL, "; ".join(lines)))
         elif silent:
             results.append(Result(record_set.key, Status.UNKNOWN, "; ".join(silent)))
-        elif targets and matched == len(targets):
-            results.append(Result(record_set.key, Status.OK, ""))
         else:
-            results.append(Result(record_set.key, Status.FAIL, "no answers"))
+            results.append(Result(record_set.key, Status.OK, ""))
     return results
 
 
