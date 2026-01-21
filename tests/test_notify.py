@@ -121,22 +121,15 @@ def test_abort_text() -> None:
     )
 
 
-def test_cap_drops_lines_past_the_limit_and_keeps_the_link_last() -> None:
+def test_cap_cuts_the_text_at_the_limit_and_keeps_the_link_last() -> None:
     lines = ["iskri.io: 300 status changes"] + [
         f"FAIL records r{i} A: " + "x" * 40 for i in range(300)
     ]
     text = cap(lines, RUN)
-    assert len(text) <= LIMIT
-    assert text.endswith("more lines in the run log\n" + RUN)
-    kept = text.splitlines()
-    dropped = int(kept[-2].split()[1])
-    assert len(kept) - 2 + dropped == len(lines)
-
-
-def test_cap_cuts_a_single_huge_line() -> None:
-    text = cap(["x" * 10_000], RUN)
-    assert len(text) <= LIMIT
-    assert text.endswith("…\n" + RUN)
+    tail = "…\nthe full message is in the run log\n" + RUN
+    assert len(text) == LIMIT
+    assert text.endswith(tail)
+    assert "\n".join(lines).startswith(text.removesuffix(tail))
 
 
 class FakeResponse(io.BytesIO):

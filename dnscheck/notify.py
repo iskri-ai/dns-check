@@ -89,24 +89,12 @@ def abort_text(domain: str, reason: str, run_url: str) -> str:
 
 
 def cap(lines: list[str], run_url: str, limit: int = LIMIT) -> str:
-    """Join the lines with the run link last, dropping lines past the limit."""
+    """Join the lines with the run link last, cutting the text to fit the limit."""
     text = "\n".join([*lines, run_url])
     if len(text) <= limit:
         return text
-    budget = limit - len(run_url) - 1 - 50  # 50 leaves room for the note
-    kept: list[str] = []
-    used = 0
-    for line in lines:
-        if used + len(line) + 1 > budget:
-            break
-        kept.append(line)
-        used += len(line) + 1
-    if not kept:
-        kept.append(lines[0][: budget - 1] + "…")
-    dropped = len(lines) - len(kept)
-    if dropped:
-        kept.append(f"… {dropped} more lines in the run log")
-    return "\n".join([*kept, run_url])
+    tail = "…\nthe full message is in the run log\n" + run_url
+    return "\n".join(lines)[: limit - len(tail)] + tail
 
 
 def duration(delta: datetime.timedelta) -> str:
