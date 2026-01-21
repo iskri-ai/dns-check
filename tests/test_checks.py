@@ -559,6 +559,19 @@ def test_records_unknown_on_a_failed_address_lookup() -> None:
     ]
 
 
+def test_an_empty_address_lookup_ends_soa_and_records_as_unknown() -> None:
+    querier = FakeQuerier(lambda *args: soa_record(2026111002))
+    for name in SELECTEL:
+        querier.lookups[(name, "A")] = []
+    failed = "; ".join(f"{name}: address lookup failed" for name in SELECTEL)
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.soa(querier, CONFIG) == Result("soa", Status.UNKNOWN, failed)  # type: ignore[arg-type]
+    assert checks.records(querier, CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ A", Status.UNKNOWN, failed)
+    ]
+    assert querier.calls == []
+
+
 def test_records_unknown_when_an_address_gives_no_response_and_the_rest_match() -> None:
     def a_answer(address: str) -> Any:
         if address == SELECTEL["d.ns.selectel.ru"]:

@@ -279,13 +279,13 @@ def _diff(expected: frozenset[RecordValue], actual: frozenset[RecordValue]) -> s
 def _targets(querier: Querier, names: Iterable[str]) -> tuple[list[tuple[str, str]], list[str]]:
     """Return (name, address) pairs, and a line for each name whose lookup failed.
 
-    A failed lookup counts like an address with no response.
+    A failed or empty lookup counts like an address with no response.
     """
     targets: list[tuple[str, str]] = []
     problems: list[str] = []
     for name in names:
         addresses = querier.lookup(name, "A")
-        if addresses is None:
+        if not addresses:
             problems.append(f"{name}: address lookup failed")
         else:
             targets.extend((name, address) for address in addresses)
