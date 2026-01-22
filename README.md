@@ -36,7 +36,7 @@ Do these steps once, in this order.
 1. **Telegram.** The org secret `TELEGRAM_BOT_TOKEN`, the org variable `TELEGRAM_CHAT_ID` and the repo variable `TELEGRAM_THREAD_ID`. On GitHub Free, private repos can't use org secrets and variables, so this repo must stay public.
 2. **Actions policy** (repo settings, Actions, General): allow only actions by GitHub and `astral-sh/setup-uv`, and require actions to be pinned to a full commit SHA.
 3. **`master` ruleset**: require a pull request and the `ci` status check, block force pushes and deletion, with an empty bypass list. The scheduled job can push, so without this ruleset any step could change the monitor itself.
-4. **Dependabot** (repo settings): turn on Dependabot alerts and Dependabot security updates.
+4. **Dependabot** (repo settings, Advanced Security): turn on the dependency graph, Dependabot alerts and Dependabot security updates. Alerts read the graph, so without it the alert list stays empty, as if nothing were vulnerable.
 5. **`state` branch**, created by hand:
 
    ```sh
