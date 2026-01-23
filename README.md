@@ -112,6 +112,7 @@ Tests make no network calls. pytest-socket blocks them.
 - The Selectel addresses are anycast. The job sees only the Selectel site nearest the GitHub runner.
 - The job queries the .io servers and the Selectel nameservers over IPv4 only. A problem on their IPv6 addresses alone goes unnoticed.
 - A Selectel instance with a current serial and wrong records is caught only in runs where a record query reaches it.
+- On 2026-11-11 the Selectel servers answered REFUSED to some queries sent in bursts, and the cause was not found. The job waits 0.25 seconds after every query, and with that pause no REFUSED was seen in testing. A single REFUSED answer from a Selectel server makes the affected `soa` or `records` check fail. See the docstring of [`QUERY_PAUSE`](dnscheck/query.py) for details. Other tools that query these nameservers should pace their queries too.
 - Delegation ignores .io servers that give no usable answer, because all .io servers serve the same registry data. It is `ok` when at least one server gives a usable referral and every referral matches, `fail` on any wrong or missing delegation, and `unknown` when no server gives a usable answer. The daily summary shows how many answered.
 - The Telegram chat and thread IDs are variables, so GitHub shows them in the public run logs. They're useless without the bot token, which is a masked secret.
 - Dependabot raises no alerts for actions pinned by SHA. A fixed action arrives with the monthly update after its 7-day cooldown, so bump it by hand when an advisory comes out.
