@@ -1,0 +1,30 @@
+[project]
+name = "dnscheck"
+version = "0.1.0"
+description = "Scheduled check that the DNS setup of iskri.io matches expected.yaml"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "dnspython>=2.9.2",
+    "pyyaml>=6.0.3",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-socket>=0.8.1",
+    "types-pyyaml>=6.0.12",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "--disable-socket --strict-markers" # no network in tests
+
+[tool.mypy]
+strict = true
+files = ["dnscheck", "tests"]
