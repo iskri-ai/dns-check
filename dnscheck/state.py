@@ -35,14 +35,18 @@ def parse(text: str) -> State:
     state: State = {}
     for key, entry in data.items():
         try:
-            state[key] = Entry(Status(entry["status"]), datetime.datetime.fromisoformat(entry["since"]))
+            state[key] = Entry(
+                Status(entry["status"]), datetime.datetime.fromisoformat(entry["since"])
+            )
         except (ValueError, TypeError, KeyError) as exc:
             raise StateError(f"the state file has an invalid entry {key!r}") from exc
     return state
 
 
 def dump(state: State) -> str:
-    data = {key: {"status": e.status.value, "since": e.since.isoformat()} for key, e in state.items()}
+    data = {
+        key: {"status": e.status.value, "since": e.since.isoformat()} for key, e in state.items()
+    }
     return json.dumps(data, indent=2, sort_keys=True) + "\n"
 
 

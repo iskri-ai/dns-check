@@ -103,7 +103,7 @@ def _records(raw: Any, domain: str, origin: dns.name.Name) -> tuple[RecordSet, .
         _need(isinstance(name, str) and name, f"records: name {name!r} must be a non-empty string")
         lowered = name.lower()
         _need(
-            not (lowered.endswith(".") or lowered == domain or lowered.endswith("." + domain)),
+            not (lowered.endswith((".", "." + domain)) or lowered == domain),
             f'records: "{name}" must be relative to {domain}, such as "old", or "@" for the apex',
         )
         _need(lowered not in seen, f'records: "{seen.get(lowered)}" and "{name}" are the same name')

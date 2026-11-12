@@ -20,7 +20,7 @@ import dns.name
 from dns.rdtypes.ANY.SOA import SOA
 
 from dnscheck.config import Config, RecordSet, RecordValue
-from dnscheck.query import NotDelegated, Querier, Records, Referral, Unusable, printable
+from dnscheck.query import NotDelegated, Querier, Referral, Unusable, printable
 
 SOA_SAMPLES = 8
 """SOA queries per address and pass, so one lagging backend instance is unlikely to hide."""
@@ -79,7 +79,9 @@ def delegation(querier: Querier, config: Config) -> Result:
                 if result.nameservers == expected:
                     answered += 1
                 else:
-                    wrong.append(f"{where} [{result.nsid}]: delegates to {_names(result.nameservers)}")
+                    wrong.append(
+                        f"{where} [{result.nsid}]: delegates to {_names(result.nameservers)}"
+                    )
             elif isinstance(result, NotDelegated):
                 wrong.append(f"{where} [{result.nsid}]: {result.reason}")
             else:
@@ -88,7 +90,11 @@ def delegation(querier: Querier, config: Config) -> Result:
     if wrong:
         return Result(key, Status.FAIL, "; ".join(wrong))
     if answered:
-        return Result(key, Status.OK, f"{_names(expected)} ({answered}/{total} .{parent.rstrip('.')} servers answered)")
+        return Result(
+            key,
+            Status.OK,
+            f"{_names(expected)} ({answered}/{total} .{parent.rstrip('.')} servers answered)",
+        )
     return Result(key, Status.UNKNOWN, "no server answered: " + "; ".join(silent))
 
 
@@ -102,18 +108,26 @@ def soa(querier: Querier, config: Config) -> Result:
         for _ in range(SOA_SAMPLES):
             result = querier.authoritative(address, qname, "SOA")
             if isinstance(result, Unusable):
-                (silent if result.no_response else wrong).append(f"{name} ({address}): {result.reason}")
+                (silent if result.no_response else wrong).append(
+                    f"{name} ({address}): {result.reason}"
+                )
                 continue
             records = [value for value in result.values if isinstance(value, SOA)]
             if len(records) != 1 or len(result.values) != 1:
-                wrong.append(f"{name} ({address}) [{result.nsid}]: {len(result.values)} SOA records")
+                wrong.append(
+                    f"{name} ({address}) [{result.nsid}]: {len(result.values)} SOA records"
+                )
                 continue
             serials.append((address, result.nsid, records[0].serial))
 
     distinct = collections.Counter(serial for _, _, serial in serials)
     if len(distinct) > 1:
         majority = distinct.most_common(1)[0][0]
-        others = _unique(f"{address} [{nsid}] {serial}" for address, nsid, serial in serials if serial != majority)
+        others = _unique(
+            f"{address} [{nsid}] {serial}"
+            for address, nsid, serial in serials
+            if serial != majority
+        )
         wrong.append("serials differ: " + ", ".join(others) + f", all others {majority}")
     if wrong:
         return Result(key, Status.FAIL, "; ".join(_unique(wrong + silent)))
@@ -140,7 +154,9 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
 
     ldh_name = data.get("ldhName")
     if not isinstance(ldh_name, str) or ldh_name.lower() != config.domain:
-        return Result(key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}")
+        return Result(
+            key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}"
+        )
     fails: list[str] = []
     unknowns: list[str] = []
     status = data.get("status")
@@ -214,9 +230,16 @@ def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list
             elif result.values == record_set.expected:
                 matched += 1
             else:
-                diffs.append((f"{address} [{result.nsid}]", _diff(record_set.expected, result.values)))
+                diffs.append(
+                    (f"{address} [{result.nsid}]", _diff(record_set.expected, result.values))
+                )
         if wrong or diffs:
-            if not wrong and not silent and len(diffs) == len(targets) and len({d for _, d in diffs}) == 1:
+            if (
+                not wrong
+                and not silent
+                and len(diffs) == len(targets)
+                and len({d for _, d in diffs}) == 1
+            ):
                 lines = [f"all addresses: {diffs[0][1]}"]
             else:
                 lines = wrong + [f"{where}: {diff}" for where, diff in diffs] + silent

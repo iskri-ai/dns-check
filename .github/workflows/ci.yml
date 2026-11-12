@@ -21,3 +21,5 @@ jobs:
       - run: uv sync --locked
       - run: uv run --no-sync mypy
       - run: uv run --no-sync pytest
+      - run: uv run --no-sync ruff check
+      - run: uv run --no-sync ruff format --check

@@ -35,7 +35,12 @@ KEYS = ["delegation", "soa", "expiry", "records @ TXT"]
 
 
 class FakeStore:
-    def __init__(self, state: dict[str, Entry] | None = None, fail_read: StateError | None = None, fail_write: bool = False) -> None:
+    def __init__(
+        self,
+        state: dict[str, Entry] | None = None,
+        fail_read: StateError | None = None,
+        fail_write: bool = False,
+    ) -> None:
         self.state = dict(state or {})
         self.fail_read = fail_read
         self.fail_write = fail_write
@@ -67,7 +72,9 @@ class FakeMessenger:
 
 
 class Harness:
-    def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, passes: list[dict[str, Status]]) -> None:
+    def __init__(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, passes: list[dict[str, Status]]
+    ) -> None:
         self.config = tmp_path / "expected.yaml"
         self.config.write_text(CONFIG)
         self.output = tmp_path / "github_output"
@@ -266,7 +273,9 @@ def test_an_unreadable_state_aborts(harness: Any) -> None:
     h = harness()
     h.store.fail_read = StateError("cannot read state.json (FileNotFoundError)")
     assert h.run() == 1
-    assert h.messenger.sent == [f"iskri.io: run aborted: cannot read state.json (FileNotFoundError)\n{RUN}"]
+    assert h.messenger.sent == [
+        f"iskri.io: run aborted: cannot read state.json (FileNotFoundError)\n{RUN}"
+    ]
     assert h.output.read_text() == "reported=true\n"
 
 
@@ -275,7 +284,10 @@ def test_a_failed_state_write_aborts_after_the_message(harness: Any) -> None:
     h.store.fail_write = True
     assert h.run() == 1
     assert h.messenger.sent[0].startswith("iskri.io: 1 status change")
-    assert h.messenger.sent[1] == f"iskri.io: run aborted: cannot write state.json (PermissionError)\n{RUN}"
+    assert (
+        h.messenger.sent[1]
+        == f"iskri.io: run aborted: cannot write state.json (PermissionError)\n{RUN}"
+    )
 
 
 def test_an_invalid_config_aborts(harness: Any) -> None:
@@ -283,10 +295,13 @@ def test_an_invalid_config_aborts(harness: Any) -> None:
     h.config.write_text(CONFIG.replace("min_days_left: 30", "min_days_left: true"))
     assert h.run() == 1
     assert h.messenger.sent == [
-        f"dns-check: run aborted: invalid expected.yaml: expiry.min_days_left: expected a positive integer\n{RUN}"]
+        f"dns-check: run aborted: invalid expected.yaml: expiry.min_days_left: expected a positive integer\n{RUN}"
+    ]
 
 
-def test_an_unexpected_error_aborts_with_our_wording_only(harness: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unexpected_error_aborts_with_our_wording_only(
+    harness: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     h = harness(all_(Status.OK))
 
     def broken(querier: object, config: object) -> Result:
@@ -335,6 +350,8 @@ def test_main_requires_the_state_option() -> None:
 def test_diff_treats_new_keys_as_previously_ok_and_drops_removed_ones() -> None:
     earlier = NOW - datetime.timedelta(hours=1)
     state = {"soa": Entry(Status.OK, earlier), "records old A": Entry(Status.FAIL, earlier)}
-    new_state, changes = diff(state, [Result("soa", Status.OK, ""), Result("records @ A", Status.FAIL, "x")], NOW)
+    new_state, changes = diff(
+        state, [Result("soa", Status.OK, ""), Result("records @ A", Status.FAIL, "x")], NOW
+    )
     assert new_state == {"soa": Entry(Status.OK, earlier), "records @ A": Entry(Status.FAIL, NOW)}
     assert [(c.previous, c.result.key) for c in changes] == [(Status.OK, "records @ A")]
