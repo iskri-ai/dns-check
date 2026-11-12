@@ -19,7 +19,7 @@ A run that completes ends green on GitHub even when checks fail or are unknown, 
 
 - **Status changes**: one message per run, only when a status changed. A recovery shows how long the problem lasted.
 - **Daily summary** at about 09:17 Asia/Almaty (04:17 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
-- **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. Whether GitHub also emails someone depends on its [rules for scheduled workflows](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs) and that user's [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
+- **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. Whether GitHub also emails someone depends on its [rules for scheduled workflows](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs) and that user's [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
 ## Changing expected.yaml
 
@@ -59,6 +59,7 @@ Do these steps once, in this order.
   ```
 
   A manual run on another branch uses that branch's workflow file with the repo secrets.
+- **Workflow changes.** After a change to `dns-check.yml` merges, start a manual run from `master` and check that it passes. CI doesn't check this file, and a broken one stops the scheduled runs without a message.
 - **Schedule disabled.** GitHub disables scheduled workflows in a public repo after 60 days without activity. The daily summary warns from day 50, and a missing summary is the last signal. To restore the schedule:
 
   ```sh

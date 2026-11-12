@@ -1,0 +1,84 @@
+name: dns-check
+
+on:
+  workflow_dispatch:
+    inputs:
+      heartbeat:
+        description: Also send the daily summary
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: dns-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    # leaves time for the fallback step after a step timeout
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: master
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.5"
+      - run: uv sync --locked --no-dev
+      # after uv sync to keep the push token off disk during the install
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: state
+          path: .state
+      - name: check the DNS setup
+        id: check
+        # about 8 minutes when every server is dead
+        timeout-minutes: 12
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ vars.TELEGRAM_THREAD_ID }}
+          HEARTBEAT_INPUT: ${{ inputs.heartbeat }}
+        run: |
+          heartbeat=()
+          if [[ $HEARTBEAT_INPUT == true ]]; then
+            heartbeat=(--heartbeat)
+          fi
+          uv run --no-sync python -m dnscheck --state .state/state.json "${heartbeat[@]}"
+      - name: save the state
+        id: save
+        timeout-minutes: 2
+        working-directory: .state
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit --quiet -m 'chore(state): record status changes' state.json
+          git push origin HEAD:state
+      - name: report an abort the checker didn't send
+        if: failure() && steps.check.outputs.reported != 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+          TELEGRAM_THREAD_ID: ${{ vars.TELEGRAM_THREAD_ID }}
+          CHECK_OUTCOME: ${{ steps.check.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          case "$CHECK_OUTCOME" in
+            skipped) what="setup failed before the checker ran" ;;
+            success) what="the checker finished, but the state was not saved" ;;
+            *)       what="the checker timed out or crashed" ;;
+          esac
+          text=$(printf '%s\n%s' "dns-check: run aborted: $what" "$RUN_URL")
+          # the printf builtin keeps the token out of process arguments
+          printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TELEGRAM_BOT_TOKEN" \
+            | curl --silent --show-error --fail --max-time 10 --config - \
+                --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
+                --data-urlencode "message_thread_id=$TELEGRAM_THREAD_ID" \
+                --data-urlencode "text=$text" \
+                --output /dev/null
