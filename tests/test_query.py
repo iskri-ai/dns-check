@@ -5,13 +5,14 @@ import dns.exception
 import dns.flags
 import dns.message
 import dns.name
+import dns.query
 import dns.rcode
 import dns.resolver
 import dns.rrset
 
 from dnscheck.config import RecordValue, record_value
 from dnscheck.query import (
-    PAUSE,
+    QUERY_PAUSE,
     TIMEOUT,
     UNREACHABLE,
     NotDelegated,
@@ -165,7 +166,7 @@ def test_a_final_response_that_is_still_truncated_is_unusable() -> None:
     assert q.referral("192.0.2.1", QNAME) == Unusable("truncated response", "5-ans-prod-spb")
 
 
-def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
+def test_timeouts_are_retried_and_every_try_is_paced() -> None:
     q, transport, sleeps = querier(
         dns.exception.Timeout,
         dns.exception.Timeout,
@@ -173,11 +174,17 @@ def test_timeouts_are_retried_with_a_pause_after_each_try() -> None:
     )
     assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
     assert len(transport.calls) == 3
-    assert sleeps == [PAUSE] * 3
+    assert sleeps == [QUERY_PAUSE] * 3
+
+
+def test_a_successful_query_is_paced_too() -> None:
+    q, _, sleeps = querier(respond())
+    assert isinstance(q.authoritative("192.0.2.1", QNAME, "A"), Records)
+    assert sleeps == [QUERY_PAUSE]
 
 
 def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
-    q, transport, _ = querier(
+    q, transport, sleeps = querier(
         dns.exception.Timeout,
         dns.exception.Timeout,
         dns.exception.Timeout,
@@ -186,6 +193,7 @@ def test_an_address_that_times_out_on_every_try_is_dead_for_the_pass() -> None:
     assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable(UNREACHABLE, no_response=True)
     assert q.authoritative("192.0.2.1", QNAME, "SOA") == Unusable(UNREACHABLE, no_response=True)
     assert len(transport.calls) == 3
+    assert sleeps == [QUERY_PAUSE] * 3
     assert isinstance(q.authoritative("192.0.2.2", QNAME, "A"), Records)
 
 
@@ -212,6 +220,7 @@ def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
         [OSError] * 3,
         [EOFError] * 3,
         [dns.exception.Timeout, OSError, dns.exception.Timeout],
+        [dns.query.UnexpectedSource] * 3,
     ]
     for outcomes in no_response:
         result = querier(*outcomes)[0].authoritative("192.0.2.1", QNAME, "A")
@@ -227,10 +236,21 @@ def test_no_response_flag_is_set_only_when_nothing_arrived() -> None:
         respond(aa=False),
         respond(tc=True),
         respond(answer=(("www.iskri.io.", "CNAME", "target.example.net."),)),
+        dns.exception.FormError,
+        dns.message.TrailingJunk,
+        dns.query.BadResponse,
     ]
     for outcome in answered:
         result = querier(outcome)[0].authoritative("192.0.2.1", WWW, "A")
         assert isinstance(result, Unusable) and not result.no_response, result
+
+
+def test_a_malformed_response_is_unusable_at_once_and_keeps_the_address_alive() -> None:
+    q, transport, sleeps = querier(dns.exception.Timeout, dns.query.BadResponse, respond())
+    assert q.authoritative("192.0.2.1", QNAME, "A") == Unusable("malformed response: BadResponse")
+    assert len(transport.calls) == 2
+    assert sleeps == [QUERY_PAUSE] * 2
+    assert q.authoritative("192.0.2.1", QNAME, "AAAA") == Records(frozenset(), "5-ans-prod-spb")
 
 
 def test_a_tcp_answer_cut_off_mid_read_counts_as_no_response() -> None:
