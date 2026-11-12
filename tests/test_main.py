@@ -1,4 +1,5 @@
 import datetime
+import os
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -9,7 +10,7 @@ from dnscheck import checks, main
 from dnscheck.checks import Result, Status
 from dnscheck.main import Deps, diff, run
 from dnscheck.notify import TelegramError
-from dnscheck.state import Entry, StateError, StateMissing
+from dnscheck.state import Entry, StateError
 
 NOW = datetime.datetime(2026, 11, 12, 13, 19, tzinfo=datetime.UTC)
 ENV = {
@@ -39,6 +40,7 @@ class FakeStore:
         self.fail_read = fail_read
         self.fail_write = fail_write
         self.writes: list[dict[str, Entry]] = []
+        self.path: Path | None = None
 
     def read(self) -> dict[str, Entry]:
         if self.fail_read:
@@ -47,7 +49,7 @@ class FakeStore:
 
     def write(self, state: dict[str, Entry]) -> None:
         if self.fail_write:
-            raise StateError("git push on the state branch failed (exit 1)")
+            raise StateError("cannot write state.json (PermissionError)")
         self.writes.append(state)
 
 
@@ -70,6 +72,7 @@ class Harness:
         self.config.write_text(CONFIG)
         self.output = tmp_path / "github_output"
         self.output.write_text("")
+        self.state_path = tmp_path / "state.json"
         self.store = FakeStore()
         self.messenger = FakeMessenger()
         self.sleeps: list[float] = []
@@ -103,17 +106,29 @@ class Harness:
             raise self.commit_error
         return NOW - self.commit_age
 
+    def open_store(self, path: Path) -> FakeStore:
+        self.store.path = path
+        return self.store
+
     def run(self, heartbeat: bool = False, env: dict[str, str] | None = None) -> int:
         deps = Deps(
             querier=self.querier,  # type: ignore[arg-type]
             fetch=lambda url: b"",
-            store=lambda repo: self.store,
+            store=self.open_store,
             messenger=lambda token, chat, thread: self.messenger,
             now=lambda: NOW,
             sleep=self.sleeps.append,
             commit_time=self.commit_time,
         )
-        code = run(self.config, self.config.parent, heartbeat, {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}, deps)
+        env = {**ENV, "GITHUB_OUTPUT": str(self.output), **(env or {})}
+        code = run(
+            config_path=self.config,
+            state_path=self.state_path,
+            repo=self.config.parent,
+            heartbeat=heartbeat,
+            env=env,
+            deps=deps,
+        )
         assert not self.passes, f"unused scripted passes: {self.passes}"
         return code
 
@@ -135,6 +150,7 @@ def test_a_healthy_first_run_records_the_state_silently(harness: Any) -> None:
     h = harness(all_(Status.OK))
     assert h.run() == 0
     assert h.messenger.sent == []
+    assert h.store.path == h.state_path
     assert h.store.writes == [{key: Entry(Status.OK, NOW) for key in KEYS}]
     assert h.sleeps == []
     assert h.output.read_text() == ""
@@ -254,28 +270,20 @@ def test_reported_stays_unset_when_the_abort_message_fails_too(harness: Any) -> 
     assert h.output.read_text() == ""
 
 
-def test_a_missing_state_branch_aborts_with_the_setup_hint(harness: Any) -> None:
+def test_an_unreadable_state_aborts(harness: Any) -> None:
     h = harness()
-    h.store.fail_read = StateMissing("the state branch does not exist on the remote")
+    h.store.fail_read = StateError("cannot read state.json (FileNotFoundError)")
     assert h.run() == 1
-    text = h.messenger.sent[0]
-    assert text.startswith("iskri.io: run aborted: the state branch does not exist on the remote. To create the state branch once: git switch --orphan state")
-
-
-def test_other_state_errors_abort_without_the_setup_hint(harness: Any) -> None:
-    h = harness()
-    h.store.fail_read = StateError("git fetch on the state branch failed (exit 128)")
-    assert h.run() == 1
-    assert h.messenger.sent == [f"iskri.io: run aborted: git fetch on the state branch failed (exit 128)\n{RUN}"]
+    assert h.messenger.sent == [f"iskri.io: run aborted: cannot read state.json (FileNotFoundError)\n{RUN}"]
     assert h.output.read_text() == "reported=true\n"
 
 
-def test_a_failed_push_aborts_after_the_message(harness: Any) -> None:
+def test_a_failed_state_write_aborts_after_the_message(harness: Any) -> None:
     h = harness(all_(Status.OK, soa=Status.FAIL))
     h.store.fail_write = True
     assert h.run() == 1
     assert h.messenger.sent[0].startswith("iskri.io: 1 status change")
-    assert h.messenger.sent[1] == f"iskri.io: run aborted: git push on the state branch failed (exit 1)\n{RUN}"
+    assert h.messenger.sent[1] == f"iskri.io: run aborted: cannot write state.json (PermissionError)\n{RUN}"
 
 
 def test_an_invalid_config_aborts(harness: Any) -> None:
@@ -301,6 +309,32 @@ def test_empty_telegram_values_abort_before_anything_else(harness: Any) -> None:
     h = harness()
     assert h.run(env={"TELEGRAM_THREAD_ID": ""}) == 1
     assert h.messenger.attempts == 0
+
+
+def test_main_passes_the_options_to_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_run(**kwargs: Any) -> int:
+        calls.append(kwargs)
+        return 1
+
+    monkeypatch.setattr(main, "run", fake_run)
+    assert main.main(["--state", "some/state.json"]) == 1
+    assert calls == [
+        {
+            "config_path": Path("expected.yaml"),
+            "state_path": Path("some/state.json"),
+            "repo": Path.cwd(),
+            "heartbeat": False,
+            "env": os.environ,
+        }
+    ]
+
+
+def test_main_requires_the_state_option() -> None:
+    with pytest.raises(SystemExit) as excinfo:
+        main.main([])
+    assert excinfo.value.code == 2
 
 
 def test_diff_treats_new_keys_as_previously_ok_and_drops_removed_ones() -> None:
