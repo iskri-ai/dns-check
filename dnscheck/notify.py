@@ -145,10 +145,15 @@ class Telegram:
         self._sleep = sleep
 
     def send(self, text: str) -> None:
-        """Send a plain-text message. Errors never include exception text,
-        because the request URL contains the token."""
+        """Send a plain-text message without a link preview. Errors never
+        include exception text, because the request URL contains the token."""
         data = urllib.parse.urlencode(
-            {"chat_id": self._chat_id, "message_thread_id": self._thread_id, "text": text}
+            {
+                "chat_id": self._chat_id,
+                "message_thread_id": self._thread_id,
+                "text": text,
+                "link_preview_options": '{"is_disabled":true}',
+            }
         ).encode()
         request = urllib.request.Request(
             f"https://api.telegram.org/bot{self._token}/sendMessage", data=data, method="POST"

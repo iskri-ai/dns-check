@@ -81,4 +81,5 @@ jobs:
                 --data-urlencode "chat_id=$TELEGRAM_CHAT_ID" \
                 --data-urlencode "message_thread_id=$TELEGRAM_THREAD_ID" \
                 --data-urlencode "text=$text" \
+                --data-urlencode 'link_preview_options={"is_disabled":true}' \
                 --output /dev/null
