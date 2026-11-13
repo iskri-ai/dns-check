@@ -3,9 +3,9 @@ name: dns-check
 on:
   schedule:
     # any cron other than this exact line sends the daily summary
-    - cron: "7,37 * * * *"
-    # daily summary at 09:17 Asia/Almaty
-    - cron: "17 4 * * *"
+    - cron: "8,38 * * * *"
+    # daily summary at 09:18 Asia/Almaty
+    - cron: "18 4 * * *"
   workflow_dispatch:
     inputs:
       heartbeat:
@@ -53,7 +53,7 @@ jobs:
         # a mismatch here sends extra summaries rather than none
         run: |
           heartbeat=()
-          if [[ $GITHUB_EVENT_NAME != workflow_dispatch && $EVENT_SCHEDULE != '7,37 * * * *' ]] \
+          if [[ $GITHUB_EVENT_NAME != workflow_dispatch && $EVENT_SCHEDULE != '8,38 * * * *' ]] \
             || [[ $HEARTBEAT_INPUT == true ]]; then
             heartbeat=(--heartbeat)
           fi
