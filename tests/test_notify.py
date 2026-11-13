@@ -81,7 +81,7 @@ def results(*records: Result) -> list[Result]:
 def test_heartbeat_expands_the_checks_and_collapses_ok_record_sets() -> None:
     failing = Result("records @ TXT", Status.FAIL, 'all addresses: missing "v=spf1 -all"')
     since = {"records @ TXT": datetime.datetime(2026, 11, 12, 10, 7, tzinfo=datetime.UTC)}
-    lines = heartbeat_lines(results(Result("records @ A", Status.OK, ""), failing), since, 3)
+    lines = heartbeat_lines(results(Result("records @ A", Status.OK, ""), failing), since)
     assert lines == [
         "delegation ok: a.ns.selectel.ru, b.ns.selectel.ru (3/4 .io servers answered)",
         "soa ok: serial 2026111001 on 4 addresses",
@@ -94,17 +94,9 @@ def test_heartbeat_expands_the_checks_and_collapses_ok_record_sets() -> None:
 def test_heartbeat_expands_a_failing_check_and_handles_no_records() -> None:
     checks = results()
     checks[2] = Result("expiry", Status.UNKNOWN, "RDAP: HTTP 503")
-    lines = heartbeat_lines(checks, {"expiry": NOW}, None)
+    lines = heartbeat_lines(checks, {"expiry": NOW})
     assert lines[2] == "UNKNOWN expiry since 2026-11-12 13:19 UTC: RDAP: HTTP 503"
     assert lines[3] == "records: none listed"
-
-
-def test_heartbeat_warns_from_50_days_without_commits() -> None:
-    assert not any("no commits" in line for line in heartbeat_lines(results(), {}, 49))
-    warning = heartbeat_lines(results(), {}, 52)[-1]
-    assert warning.startswith(
-        "no commits on master for 52 days. GitHub may disable the schedule at 60 days"
-    )
 
 
 def test_compose_sends_nothing_without_changes_or_heartbeat() -> None:

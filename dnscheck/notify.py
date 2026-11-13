@@ -21,8 +21,6 @@ LIMIT = 4000
 """Telegram rejects messages over 4,096 characters."""
 TELEGRAM_TRIES = 3
 TELEGRAM_TIMEOUT = 10.0
-SCHEDULE_WARNING_DAYS = 50
-SCHEDULE_DISABLE_DAYS = 60
 
 
 class TelegramError(Exception):
@@ -51,11 +49,7 @@ def change_lines(changes: Sequence[Change], now: datetime.datetime) -> list[str]
     return lines
 
 
-def heartbeat_lines(
-    results: Sequence[Result],
-    since: Mapping[str, datetime.datetime],
-    days_since_commit: int | None,
-) -> list[str]:
+def heartbeat_lines(results: Sequence[Result], since: Mapping[str, datetime.datetime]) -> list[str]:
     lines = []
     records = [r for r in results if r.key.startswith("records ")]
     for result in results:
@@ -71,13 +65,6 @@ def heartbeat_lines(
         ok = sum(r.status is Status.OK for r in records)
         lines.append(f"records: {ok}/{len(records)} ok")
         lines.extend(_problem(r, since) for r in records if r.status is not Status.OK)
-    if days_since_commit is None:
-        lines.append("could not read the date of the latest commit on master")
-    elif days_since_commit >= SCHEDULE_WARNING_DAYS:
-        lines.append(
-            f"no commits on master for {days_since_commit} days. GitHub may disable the schedule"
-            f" at {SCHEDULE_DISABLE_DAYS} days without activity, push a commit to reset it."
-        )
     return lines
 
 
