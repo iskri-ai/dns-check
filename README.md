@@ -18,14 +18,14 @@ A run that completes ends green on GitHub even when checks fail or are unknown, 
 ## Messages
 
 - **Status changes**: one message per run, only when a status changed. A recovery shows how long the problem lasted.
-- **Daily summary** at about 09:17 Asia/Almaty (04:17 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
+- **Daily summary** at about 09:18 Asia/Almaty (04:18 UTC): every check with its key facts, current problems, and a warning when `master` has had no commit for 50 days.
 - **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. Whether GitHub also emails someone depends on its [rules for scheduled workflows](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs) and that user's [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
 ## Changing expected.yaml
 
 The comments at the top of `expected.yaml` describe the format. The loader checks the structure, the record names and the values before the first query, and CI loads the real file on every pull request to `master`. A valid file can still be wrong. Removing a record from the file stops checking it, without a message.
 
-A mismatch is reported while either change is pending. To avoid a `fail` message and the recovery message after it, land both changes while no check is running. Checks are scheduled at :07 and :37 past each hour, GitHub can start them late, and a run takes a few minutes.
+A mismatch is reported while either change is pending. To avoid a `fail` message and the recovery message after it, land both changes while no check is running. Checks are scheduled at :08 and :38 past each hour, GitHub can start them late, and a run takes a few minutes.
 
 Any zone edit, even to an unlisted record, changes the SOA serial. A run that queries the nameservers while they update can report a `soa` fail, followed by a recovery.
 
