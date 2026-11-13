@@ -7,6 +7,22 @@
     "since": "2026-11-12T11:32:11.151004+00:00",
     "status": "ok"
   },
+  "records @ A": {
+    "since": "2026-11-13T19:08:41.585404+00:00",
+    "status": "ok"
+  },
+  "records @ AAAA": {
+    "since": "2026-11-13T19:08:41.585404+00:00",
+    "status": "ok"
+  },
+  "records _github-pages-challenge-iskri-ai TXT": {
+    "since": "2026-11-13T19:08:41.585404+00:00",
+    "status": "ok"
+  },
+  "records www CNAME": {
+    "since": "2026-11-13T19:08:41.585404+00:00",
+    "status": "ok"
+  },
   "soa": {
     "since": "2026-11-12T11:32:11.151004+00:00",
     "status": "ok"
