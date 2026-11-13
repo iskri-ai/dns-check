@@ -14,4 +14,19 @@ nameservers:
 expiry:
   rdap_base_url: https://rdap.identitydigital.services/rdap/
   min_days_left: 30
-records: {}
+records:
+  "@":
+    A:
+      - 185.199.108.153
+      - 185.199.109.153
+      - 185.199.110.153
+      - 185.199.111.153
+    AAAA:
+      - 2606:50c0:8000::153
+      - 2606:50c0:8001::153
+      - 2606:50c0:8002::153
+      - 2606:50c0:8003::153
+  www:
+    CNAME: iskri-ai.github.io
+  _github-pages-challenge-iskri-ai:
+    TXT: "ca2e9b2ffa3cf79f0eb16318651739"
