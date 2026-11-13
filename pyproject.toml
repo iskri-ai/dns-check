@@ -1,7 +1,7 @@
 [project]
 name = "dnscheck"
 version = "0.1.0"
-description = "Scheduled check that the DNS setup of iskri.io matches expected.yaml"
+description = "Checks DNS zones against their expected configuration"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
