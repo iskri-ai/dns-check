@@ -36,7 +36,8 @@ Do these steps once, in this order.
 1. **Telegram.** The org secret `TELEGRAM_BOT_TOKEN`, the org variable `TELEGRAM_CHAT_ID` and the repo variable `TELEGRAM_THREAD_ID`. On GitHub Free, private repos can't use org secrets and variables, so this repo must stay public.
 2. **Actions policy** (repo settings, Actions, General): allow only actions by GitHub and `astral-sh/setup-uv`, and require actions to be pinned to a full commit SHA.
 3. **`master` ruleset**: require a pull request and the `ci` status check, block force pushes and deletion, with an empty bypass list. The scheduled job can push, so without this ruleset any step could change the monitor itself.
-4. **`state` branch**, created by hand:
+4. **Dependabot** (repo settings, Advanced Security): turn on the dependency graph, Dependabot alerts and Dependabot security updates. Alerts read the graph, so without it the alert list stays empty, as if nothing were vulnerable.
+5. **`state` branch**, created by hand:
 
    ```sh
    git switch --orphan state
@@ -48,7 +49,7 @@ Do these steps once, in this order.
    ```
 
    Then a **`state` ruleset** that blocks deletion and force pushes but allows normal pushes.
-5. **External scheduler**: the token and the two cron-job.org jobs described under [External scheduler](#external-scheduler).
+6. **External scheduler**: the token and the two cron-job.org jobs described under [External scheduler](#external-scheduler).
 
 ## External scheduler
 
@@ -83,6 +84,14 @@ To hand over the scheduler, the new maintainer issues their own token, takes ove
 
   A manual run on another branch uses that branch's workflow file with the repo secrets.
 - **Workflow changes.** After a change to `dns-check.yml` merges, start a manual run from `master` and check that it passes. CI doesn't check this file. A file GitHub can't parse makes the dispatch call fail, and cron-job.org emails about it.
+- **Action pins.** Before merging any PR that changes an action pin, from Dependabot or by hand, read the release notes and check that each new SHA is the commit of the tag in its version comment, in the official repo. Use the action's own repo and tag:
+
+  ```sh
+  git ls-remote --exit-code --tags https://github.com/actions/checkout v7.0.1 'v7.0.1^{}'
+  ```
+
+  The command fails if the tag doesn't exist. If a line ending in `^{}` appears, the tag is annotated and that line holds the commit SHA.
+- **Dependency updates.** Dependabot checks monthly and groups eligible version updates into one PR per ecosystem, for releases at least 7 days old. Security updates for Python packages open without waiting for the schedule or the cooldown, when Dependabot can resolve a fixed version. Merge each PR by hand, after CI passes and you read the release notes. For an actions PR, also do the pin check above. After merging a PR that changes `dns-check.yml` or a runtime package (one that `uv sync --no-dev` installs), start a manual run from `master` and check that it passes. An actions PR almost always changes `dns-check.yml`.
 
 ## Development
 
@@ -105,3 +114,4 @@ Tests make no network calls. pytest-socket blocks them.
 - A Selectel instance with a current serial and wrong records is caught only in runs where a record query reaches it.
 - Delegation ignores .io servers that give no usable answer, because all .io servers serve the same registry data. It is `ok` when at least one server gives a usable referral and every referral matches, `fail` on any wrong or missing delegation, and `unknown` when no server gives a usable answer. The daily summary shows how many answered.
 - The Telegram chat and thread IDs are variables, so GitHub shows them in the public run logs. They're useless without the bot token, which is a masked secret.
+- Dependabot raises no alerts for actions pinned by SHA. A fixed action arrives with the monthly update after its 7-day cooldown, so bump it by hand when an advisory comes out.
