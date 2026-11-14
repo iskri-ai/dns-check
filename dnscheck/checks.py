@@ -133,9 +133,7 @@ def soa(querier: Querier, config: Config) -> Result:
         return Result(key, Status.FAIL, "; ".join(_unique(wrong + silent)))
     if silent:
         return Result(key, Status.UNKNOWN, "; ".join(_unique(silent)))
-    if len(distinct) == 1:
-        return Result(key, Status.OK, f"serial {next(iter(distinct))} on {len(targets)} addresses")
-    return Result(key, Status.FAIL, "no SOA answers")
+    return Result(key, Status.OK, f"serial {next(iter(distinct))} on {len(targets)} addresses")
 
 
 def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -> Result:
@@ -157,36 +155,26 @@ def expiry(config: Config, now: datetime.datetime, fetch: Fetch | None = None) -
         return Result(
             key, Status.UNKNOWN, f"RDAP: the response is for {ldh_name!r}, not {config.domain}"
         )
-    fails: list[str] = []
-    unknowns: list[str] = []
-    status = data.get("status")
-    entries = status if isinstance(status, list) else []
-    if any(isinstance(value, str) and _squash(value) == "autorenewperiod" for value in entries):
-        fails.append(AUTO_RENEWED)
-    # a domain must have at least one EPP status
-    if not entries or not all(isinstance(value, str) for value in entries):
-        unknowns.append("RDAP: missing, empty or malformed status array")
-
-    facts = ""
     expires, problem = _expiration(data)
-    if expires is None:
-        unknowns.append(problem)
-    else:
+    facts = ""
+    if expires is not None:
         left = expires - now
         date = expires.astimezone(datetime.UTC).date().isoformat()
         if left < datetime.timedelta(0):
-            fails.append(f"expired on {date}")
-        else:
-            facts = f"expires {date}, {left.days} days left"
-            if left < datetime.timedelta(days=config.min_days_left):
-                fails.append(f"{facts}, minimum {config.min_days_left}")
-            elif fails:
-                fails[-1] += f" ({facts})"
+            return Result(key, Status.FAIL, f"expired on {date}")
+        facts = f"expires {date}, {left.days} days left"
+        if left < datetime.timedelta(days=config.min_days_left):
+            return Result(key, Status.FAIL, f"{facts}, minimum {config.min_days_left}")
 
-    if fails:
-        return Result(key, Status.FAIL, "; ".join(fails + unknowns))
-    if unknowns:
-        return Result(key, Status.UNKNOWN, "; ".join(unknowns))
+    status = data.get("status")
+    entries = status if isinstance(status, list) else []
+    if any(isinstance(value, str) and _squash(value) == "autorenewperiod" for value in entries):
+        return Result(key, Status.FAIL, f"{AUTO_RENEWED} ({facts})" if facts else AUTO_RENEWED)
+    if expires is None:
+        return Result(key, Status.UNKNOWN, problem)
+    # a domain must have at least one EPP status
+    if not entries or not all(isinstance(value, str) for value in entries):
+        return Result(key, Status.UNKNOWN, "RDAP: missing, empty or malformed status array")
     return Result(key, Status.OK, facts)
 
 
@@ -222,14 +210,11 @@ def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list
         wrong: list[str] = []
         diffs: list[tuple[str, str]] = []
         silent = list(lookup_silent)
-        matched = 0
         for _name, address in targets:
             result = querier.authoritative(address, record_set.qname, record_set.rtype)
             if isinstance(result, Unusable):
                 (silent if result.no_response else wrong).append(f"{address}: {result.reason}")
-            elif result.values == record_set.expected:
-                matched += 1
-            else:
+            elif result.values != record_set.expected:
                 diffs.append(
                     (f"{address} [{result.nsid}]", _diff(record_set.expected, result.values))
                 )
@@ -246,10 +231,8 @@ def records(querier: Querier, config: Config, sets: Iterable[RecordSet]) -> list
             results.append(Result(record_set.key, Status.FAIL, "; ".join(lines)))
         elif silent:
             results.append(Result(record_set.key, Status.UNKNOWN, "; ".join(silent)))
-        elif targets and matched == len(targets):
-            results.append(Result(record_set.key, Status.OK, ""))
         else:
-            results.append(Result(record_set.key, Status.FAIL, "no answers"))
+            results.append(Result(record_set.key, Status.OK, ""))
     return results
 
 
@@ -296,13 +279,13 @@ def _diff(expected: frozenset[RecordValue], actual: frozenset[RecordValue]) -> s
 def _targets(querier: Querier, names: Iterable[str]) -> tuple[list[tuple[str, str]], list[str]]:
     """Return (name, address) pairs, and a line for each name whose lookup failed.
 
-    A failed lookup counts like an address with no response.
+    A failed or empty lookup counts like an address with no response.
     """
     targets: list[tuple[str, str]] = []
     problems: list[str] = []
     for name in names:
         addresses = querier.lookup(name, "A")
-        if addresses is None:
+        if not addresses:
             problems.append(f"{name}: address lookup failed")
         else:
             targets.extend((name, address) for address in addresses)

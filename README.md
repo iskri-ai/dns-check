@@ -17,7 +17,7 @@ A run that completes ends green on GitHub even when checks fail or are unknown, 
 
 ## Messages
 
-- **Status changes**: one message per run, only when a status changed. A recovery shows how long the problem lasted.
+- **Status changes**: one message per run, only when a status changed. A recovery shows how long the check spent in its previous status. After `fail`, then `unknown`, then `ok`, that covers only the `unknown` part.
 - **Daily summary** at about 09:23 Asia/Almaty (04:23 UTC): every check with its key facts and current problems.
 - **Run aborted**: the job could not finish its work, for example because `expected.yaml` is invalid or Telegram is unreachable. Each aborted run attempts this message and fails the job, until the cause is fixed. If a run aborts before saving the state, the next run may report the same changes again. For runs started by cron-job.org, GitHub may also [email the token owner](https://docs.github.com/en/actions/concepts/workflows-and-actions/notifications-for-workflow-runs), depending on their [notification settings](https://docs.github.com/en/subscriptions-and-notifications/how-tos/managing-github-actions-notifications).
 
@@ -101,6 +101,7 @@ Tests make no network calls. pytest-socket blocks them.
 - Unlisted names and record types are not checked. TTLs are not compared.
 - A second, different problem on a check that is already failing sends no message, because messages report status changes. It shows in the daily summary only if it is still present then.
 - The Selectel addresses are anycast. The job sees only the Selectel site nearest the GitHub runner.
+- The job queries the .io servers and the Selectel nameservers over IPv4 only. A problem on their IPv6 addresses alone goes unnoticed.
 - A Selectel instance with a current serial and wrong records is caught only in runs where a record query reaches it.
 - Delegation ignores .io servers that give no usable answer, because all .io servers serve the same registry data. It is `ok` when at least one server gives a usable referral and every referral matches, `fail` on any wrong or missing delegation, and `unknown` when no server gives a usable answer. The daily summary shows how many answered.
 - The Telegram chat and thread IDs are variables, so GitHub shows them in the public run logs. They're useless without the bot token, which is a masked secret.

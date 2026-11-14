@@ -435,30 +435,18 @@ def test_expiry_unknown_on_a_missing_empty_or_malformed_status_array(status: obj
 def test_a_malformed_neighbor_does_not_hide_an_auto_renewal(status: list[object]) -> None:
     result = checks.expiry(CONFIG, NOW, rdap(expiration("2027-11-10T09:43:44Z"), status=status))
     assert result == Result(
-        "expiry",
-        Status.FAIL,
-        "; ".join(
-            [
-                f"{AUTO_RENEWED} (expires 2027-11-10, 363 days left)",
-                "RDAP: missing, empty or malformed status array",
-            ]
-        ),
+        "expiry", Status.FAIL, f"{AUTO_RENEWED} (expires 2027-11-10, 363 days left)"
     )
 
 
-def test_a_confirmed_expiry_problem_outranks_an_unreadable_part() -> None:
-    expired = checks.expiry(CONFIG, NOW, rdap(expiration("2026-11-01T00:00:00Z"), status=MISSING))
-    assert expired == Result(
-        "expiry",
-        Status.FAIL,
-        "expired on 2026-11-01; RDAP: missing, empty or malformed status array",
-    )
-    renewed = checks.expiry(
-        CONFIG, NOW, rdap(expiration("next year"), status=["auto renew period"])
-    )
-    assert renewed == Result(
-        "expiry", Status.FAIL, f"{AUTO_RENEWED}; RDAP: cannot parse the expiration date 'next year'"
-    )
+def test_an_expiry_fail_outranks_an_unreadable_status() -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("2026-11-01T00:00:00Z"), status=MISSING))
+    assert result == Result("expiry", Status.FAIL, "expired on 2026-11-01")
+
+
+def test_an_auto_renewal_outranks_an_unreadable_date() -> None:
+    result = checks.expiry(CONFIG, NOW, rdap(expiration("next year"), status=["auto renew period"]))
+    assert result == Result("expiry", Status.FAIL, AUTO_RENEWED)
 
 
 def test_a_response_for_another_domain_stays_unknown_before_anything_else() -> None:
@@ -569,6 +557,19 @@ def test_records_unknown_on_a_failed_address_lookup() -> None:
     assert checks.records(querier, CONFIG, sets) == [  # type: ignore[arg-type]
         Result("records @ A", Status.UNKNOWN, "c.ns.selectel.ru: address lookup failed")
     ]
+
+
+def test_an_empty_address_lookup_ends_soa_and_records_as_unknown() -> None:
+    querier = FakeQuerier(lambda *args: soa_record(2026111002))
+    for name in SELECTEL:
+        querier.lookups[(name, "A")] = []
+    failed = "; ".join(f"{name}: address lookup failed" for name in SELECTEL)
+    sets = [r for r in CONFIG.records if r.rtype == "A"]
+    assert checks.soa(querier, CONFIG) == Result("soa", Status.UNKNOWN, failed)  # type: ignore[arg-type]
+    assert checks.records(querier, CONFIG, sets) == [  # type: ignore[arg-type]
+        Result("records @ A", Status.UNKNOWN, failed)
+    ]
+    assert querier.calls == []
 
 
 def test_records_unknown_when_an_address_gives_no_response_and_the_rest_match() -> None:
