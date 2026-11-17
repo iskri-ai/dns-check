@@ -31,3 +31,8 @@ records:
     CNAME: iskri-ai.github.io
   _github-pages-challenge-iskri-ai:
     TXT: "ca2e9b2ffa3cf79f0eb16318651739"
+  demo:
+    A:
+      - 135.106.181.10
+    AAAA: []
+    CAA: []
