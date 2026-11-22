@@ -8,39 +8,39 @@
     "status": "ok"
   },
   "records @ A": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records @ AAAA": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records @ CAA": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records _github-pages-challenge-iskri-ai TXT": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records demo A": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records demo AAAA": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records demo CAA": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "records www CNAME": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   },
   "soa": {
-    "since": "2026-11-22T04:12:33.157879+00:00",
-    "status": "unknown"
+    "since": "2026-11-22T04:23:46.424614+00:00",
+    "status": "ok"
   }
 }
